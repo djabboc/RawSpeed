@@ -1,0 +1,9 @@
+<UserControl x:Class="RawSpeed.App.Controls.AdjustmentSlider" x:Name="Root" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel Margin="0,1,0,2">
+    <DockPanel>
+      <TextBlock Text="{Binding Label, ElementName=Root}" Foreground="#BDC5CE" />
+      <TextBlock Text="{Binding Value, ElementName=Root, StringFormat={}{0:0.#}}" HorizontalAlignment="Right" Foreground="#D8E6C7" FontFamily="Consolas" />
+    </DockPanel>
+    <Slider Value="{Binding Value, ElementName=Root, Mode=TwoWay}" Minimum="{Binding Minimum, ElementName=Root}" Maximum="{Binding Maximum, ElementName=Root}" SmallChange="{Binding Step, ElementName=Root}" AutomationProperties.Name="{Binding Label, ElementName=Root}" ToolTip="双击滑条恢复为 0" PreviewMouseDoubleClick="ResetValue" />
+  </StackPanel>
+</UserControl>

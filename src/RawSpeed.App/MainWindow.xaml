@@ -1,0 +1,105 @@
+<Window x:Class="RawSpeed.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:controls="clr-namespace:RawSpeed.App.Controls" Style="{StaticResource {x:Type Window}}" Title="RawSpeed · RAW 照片工作室" Width="1480" Height="960" MinWidth="1080" MinHeight="720" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="OnFilesDrop" PreviewKeyDown="OnPreviewKeyDown" Closing="OnClosing">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="70" /><RowDefinition Height="*" /><RowDefinition Height="34" /></Grid.RowDefinitions>
+    <Border Grid.Row="0" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="24,0">
+      <DockPanel LastChildFill="False">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Border Background="{StaticResource Accent}" Width="30" Height="30" CornerRadius="8" Margin="0,0,12,0"><TextBlock Text="R" Foreground="#17220E" FontSize="21" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+          <StackPanel><TextBlock Text="RAWSPEED" FontSize="19" FontWeight="Bold" /><TextBlock Text="让照片，回到创作本身。" Foreground="{StaticResource Muted}" FontSize="10" /></StackPanel>
+          <Border BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="4" Margin="20,0,0,0" Padding="7,3" VerticalAlignment="Center"><TextBlock Text="PREVIEW  0.1" FontSize="10" Foreground="{StaticResource Muted}" /></Border>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Content="打开照片" Command="{Binding OpenCommand}" ToolTip="Ctrl+O · 支持拖入照片" AutomationProperties.AutomationId="OpenPhotos" />
+          <Button Content="保存配方" Command="{Binding SaveCommand}" ToolTip="Ctrl+S · 保存无损编辑参数" />
+          <Button Content="导出照片  ↗" Command="{Binding ExportCommand}" Style="{StaticResource PrimaryButton}" Padding="20,10" ToolTip="Ctrl+E · 原尺寸 JPEG / PNG / TIFF" AutomationProperties.AutomationId="ExportPhoto" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="190" /><ColumnDefinition Width="*" /><ColumnDefinition Width="330" /></Grid.ColumnDefinitions>
+      <Border Grid.Column="0" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+        <DockPanel Margin="14,18,14,14">
+          <StackPanel DockPanel.Dock="Top">
+            <DockPanel Margin="0,0,0,14"><TextBlock Text="照片库" FontWeight="SemiBold" /><TextBlock Text="{Binding PhotoCount}" Foreground="{StaticResource Muted}" HorizontalAlignment="Right" FontSize="11" /></DockPanel>
+            <Button Content="＋  打开文件夹" Command="{Binding OpenFolderCommand}" Margin="0,0,0,14" HorizontalContentAlignment="Left" />
+          </StackPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,18,0,0">
+            <Border Background="#252D23" CornerRadius="6" Padding="12"><StackPanel><TextBlock Text="原片始终保留" Foreground="{StaticResource Accent}" /><TextBlock Text="调整只作用于预览和导出。&#10;保存配方可随时继续编辑。" FontSize="10" LineHeight="18" Foreground="{StaticResource Muted}" Margin="0,6,0,0" /></StackPanel></Border>
+            <TextBlock Text="B  原图对比    C  裁切&#10;Ctrl+Z  撤销    Ctrl+E  导出" Foreground="#77818F" FontSize="10" LineHeight="20" Margin="2,12,0,0" />
+          </StackPanel>
+          <ListBox ItemsSource="{Binding Photos}" SelectedItem="{Binding SelectedPhoto}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="PhotoLibrary">
+            <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Foreground" Value="#E7EBEF" /><Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,0,10" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="ItemBorder" Background="#242A33" CornerRadius="6" Padding="8" BorderThickness="1" BorderBrush="Transparent"><ContentPresenter /></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="BorderBrush" Value="#C8F28A" /><Setter TargetName="ItemBorder" Property="Background" Value="#2B3428" /></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate><DataTemplate><StackPanel><Grid Height="82" Margin="0,0,0,8"><Border Background="#151A20" CornerRadius="3" /><TextBlock Text="{Binding Kind}" Foreground="#576476" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="20" FontWeight="Bold" /><Image Source="{Binding Thumbnail}" Stretch="Uniform" /></Grid><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="11" /><DockPanel Margin="0,5,0,0"><TextBlock Text="{Binding Kind}" Foreground="{StaticResource Accent}" FontSize="9" /><TextBlock Text="{Binding Size}" Foreground="{StaticResource Muted}" HorizontalAlignment="Right" FontSize="9" /></DockPanel></StackPanel></DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+      <Grid Grid.Column="1">
+        <Grid.RowDefinitions><RowDefinition Height="52" /><RowDefinition Height="*" /><RowDefinition Height="52" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <DockPanel Grid.Row="0" Margin="20,0">
+          <TextBlock Text="{Binding FileName}" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <Button Content="适应" Click="FitImage" Padding="9,5" ToolTip="适应窗口" />
+            <Button Content="预览 1:1" Click="ActualSize" Padding="9,5" ToolTip="预览像素 100%，工作图最长边 1600" />
+            <Button Content="{Binding CompareLabel}" Command="{Binding CompareCommand}" Padding="10,5" />
+          </StackPanel>
+        </DockPanel>
+        <Border Grid.Row="1" Background="#0C0F13" Margin="16,0" CornerRadius="6" ClipToBounds="True">
+          <Grid x:Name="Viewport" SizeChanged="ViewportSizeChanged">
+            <ScrollViewer x:Name="ImageScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+              <Image x:Name="PhotoImage" Source="{Binding Preview}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+            </ScrollViewer>
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding Empty, Converter={StaticResource BoolVisibility}}">
+              <TextBlock Text="光影，已就绪。" FontSize="28" Foreground="#CCD5DF" HorizontalAlignment="Center" FontWeight="Light" />
+              <TextBlock Text="拖入照片，或打开一个文件夹" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,14,0,28" />
+              <Button Content="打开照片" Command="{Binding OpenCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Center" Padding="28,12" />
+              <TextBlock Text="JPEG  /  NIKON NEF  /  OLYMPUS ORF" FontSize="10" Foreground="#657181" HorizontalAlignment="Center" Margin="0,22,0,0" />
+            </StackPanel>
+            <Canvas x:Name="CropCanvas" Background="#01000000" Visibility="{Binding CropMode, Converter={StaticResource BoolVisibility}}" MouseLeftButtonDown="CropMouseDown" MouseMove="CropMouseMove" MouseLeftButtonUp="CropMouseUp" Cursor="Cross">
+              <Rectangle x:Name="CropRectangle" Stroke="#C8F28A" StrokeThickness="1.5" Fill="#0CC8F28A" IsHitTestVisible="False" />
+              <Path x:Name="CropGrid" Stroke="#88FFFFFF" StrokeThickness="0.6" IsHitTestVisible="False" />
+            </Canvas>
+            <Border VerticalAlignment="Top" HorizontalAlignment="Center" Background="#EE263323" CornerRadius="5" Padding="12,8" Margin="0,12,0,0" Visibility="{Binding CropMode, Converter={StaticResource BoolVisibility}}">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="拖动框选构图" VerticalAlignment="Center" Margin="0,0,12,0" /><Button Content="应用裁切" Click="ApplyCrop" Padding="8,4" Style="{StaticResource PrimaryButton}" /><Button Content="取消" Click="CancelCrop" Padding="8,4" /></StackPanel>
+            </Border>
+            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Background="#CC10151B" Padding="10,5" CornerRadius="4" Visibility="{Binding ShowBefore, Converter={StaticResource BoolVisibility}}"><TextBlock Text="原图" Foreground="{StaticResource Accent}" /></Border>
+          </Grid>
+        </Border>
+        <DockPanel Grid.Row="2" Margin="20,0">
+          <TextBlock Text="{Binding ImageInfo}" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding RenderInfo}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="10" Foreground="{StaticResource Accent}" Margin="12,0,0,0" />
+        </DockPanel>
+        <Border Grid.Row="3" Background="#402621" Padding="12" Margin="16,0,16,12" CornerRadius="4" Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}"><TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="#FFB3A1" /></Border>
+      </Grid>
+      <Border Grid.Column="2" Background="{StaticResource Surface}" BorderThickness="1,0,0,0" BorderBrush="{StaticResource Line}">
+        <TabControl>
+          <TabItem Header="编辑">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="18,18,18,22" IsEnabled="{Binding HasImage}">
+                <DockPanel Margin="0,0,0,10"><TextBlock Text="RGB 直方图" Foreground="{StaticResource Muted}" FontSize="10" /><StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="↶" Command="{Binding UndoCommand}" Padding="7,2" ToolTip="撤销 Ctrl+Z" /><Button Content="↷" Command="{Binding RedoCommand}" Padding="7,2" ToolTip="重做 Ctrl+Y" /><Button Content="重置" Command="{Binding ResetCommand}" Padding="7,2" FontSize="10" /></StackPanel></DockPanel>
+                <controls:HistogramView Values="{Binding Histogram}" Height="80" Margin="0,0,0,18" />
+                <Expander Header="构图"><StackPanel Margin="0,12,0,0"><UniformGrid Columns="4"><Button Content="↶ 90°" Command="{Binding RotateLeftCommand}" Padding="4,8" /><Button Content="↷ 90°" Command="{Binding RotateRightCommand}" Padding="4,8" /><Button Content="镜像" Command="{Binding FlipCommand}" Padding="4,8" /><Button Content="裁切" Command="{Binding CropCommand}" Padding="4,8" /></UniformGrid><controls:AdjustmentSlider Label="拉直" Value="{Binding Straighten}" Minimum="-45" Maximum="45" Step="0.1" Margin="0,12,0,0" /><DockPanel><Button Content="清除裁切" Command="{Binding ClearCropCommand}" Padding="7,4" FontSize="10" /><Button Content="3 : 2" Click="CropThreeTwo" Padding="7,4" FontSize="10" /><Button Content="1 : 1" Click="CropSquare" Padding="7,4" FontSize="10" /></DockPanel></StackPanel></Expander>
+                <Expander Header="光线"><StackPanel Margin="0,12,0,0"><controls:AdjustmentSlider Label="曝光 · EV" Value="{Binding Exposure}" Minimum="-10" Maximum="10" Step="0.1" /><controls:AdjustmentSlider Label="对比度" Value="{Binding Contrast}" /><controls:AdjustmentSlider Label="高光" Value="{Binding Highlights}" /><controls:AdjustmentSlider Label="阴影" Value="{Binding Shadows}" /></StackPanel></Expander>
+                <Expander Header="色彩"><StackPanel Margin="0,12,0,0"><controls:AdjustmentSlider Label="色温 · 冷 / 暖" Value="{Binding Temperature}" /><controls:AdjustmentSlider Label="色调 · 绿 / 洋红" Value="{Binding Tint}" /><controls:AdjustmentSlider Label="色相" Value="{Binding Hue}" Minimum="-360" Maximum="360" /><controls:AdjustmentSlider Label="饱和度" Value="{Binding Saturation}" /></StackPanel></Expander>
+                <Expander Header="色调曲线"><StackPanel Margin="0,12,0,0"><controls:CurveView Settings="{Binding Settings}" Height="110" Margin="0,0,0,12" /><TextBlock Text="三点平滑曲线 · 双击滑条归零" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,0,0,10" /><controls:AdjustmentSlider Label="暗部控制点" Value="{Binding CurveShadows}" /><controls:AdjustmentSlider Label="中间调控制点" Value="{Binding CurveMidtones}" /><controls:AdjustmentSlider Label="亮部控制点" Value="{Binding CurveHighlights}" /></StackPanel></Expander>
+                <Expander Header="细节与降噪"><StackPanel Margin="0,12,0,0"><controls:AdjustmentSlider Label="快速保边降噪" Value="{Binding Denoise}" Minimum="0" Maximum="100" /><TextBlock Text="保留轮廓，抑制亮度与色彩噪点。&#10;原尺寸导出时重新计算。" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" /></StackPanel></Expander>
+                <Expander Header="风格滤镜"><StackPanel Margin="0,12,0,0"><UniformGrid Columns="3"><Button Content="自然" Command="{Binding NaturalCommand}" Padding="8" /><Button Content="暖胶片" Command="{Binding FilmCommand}" Padding="8" /><Button Content="黑白" Command="{Binding MonoCommand}" Padding="8" /></UniformGrid><TextBlock Text="{Binding FilterName}" Foreground="{StaticResource Accent}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,15,0,10" /><DockPanel><Button Content="＋ 导入 .cube" Command="{Binding ImportLutCommand}" /><Button Content="移除" Command="{Binding ClearLutCommand}" /></DockPanel><controls:AdjustmentSlider Label="LUT 强度" Value="{Binding LutStrength}" Minimum="0" Maximum="100" Margin="0,14,0,0" /><TextBlock Text="支持标准 3D .cube · sRGB 滤镜" Foreground="{StaticResource Muted}" FontSize="10" /></StackPanel></Expander>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="EXIF">
+            <DockPanel Margin="12,16,12,12">
+              <StackPanel DockPanel.Dock="Top"><TextBlock Text="照片的完整故事" FontSize="16" Margin="4,0,0,5" /><TextBlock Text="{Binding MetadataCount}" Foreground="{StaticResource Muted}" FontSize="10" Margin="4,0,0,14" /><TextBox Text="{Binding MetadataSearch, UpdateSourceTrigger=PropertyChanged}" ToolTip="搜索字段、分组或值" AutomationProperties.Name="搜索 EXIF" Margin="0,0,0,10" /><Button Content="复制全部可见信息" Click="CopyMetadata" Margin="0,0,0,12" /></StackPanel>
+              <ListView x:Name="MetadataList" ItemsSource="{Binding MetadataView}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="4,8" /><Setter Property="Foreground" Value="#E7EBEF" /><Setter Property="Background" Value="Transparent" /></Style></ListView.ItemContainerStyle>
+                <ListView.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Group}" Foreground="#7B899A" FontSize="9" /><TextBlock Text="{Binding Name}" Foreground="#BAC5D1" FontSize="11" Margin="0,3,0,3" /><TextBox Text="{Binding Value, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" /></StackPanel></DataTemplate></ListView.ItemTemplate>
+              </ListView>
+            </DockPanel>
+          </TabItem>
+        </TabControl>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" Background="#1C222A" BorderThickness="0,1,0,0" BorderBrush="{StaticResource Line}" Padding="16,0">
+      <DockPanel><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"><ProgressBar Width="60" Height="3" IsIndeterminate="True" Visibility="{Binding IsLoading, Converter={StaticResource BoolVisibility}}" Foreground="{StaticResource Accent}" Margin="10,0" /><ProgressBar Width="60" Height="3" IsIndeterminate="True" Visibility="{Binding IsExporting, Converter={StaticResource BoolVisibility}}" Foreground="{StaticResource Accent}" Margin="10,0" /><Button Content="取消" Command="{Binding CancelCommand}" Padding="8,2" FontSize="10" /><TextBlock Text="LOCAL  ·  非破坏式编辑" Foreground="#7E8B99" FontSize="9" VerticalAlignment="Center" Margin="12,0,0,0" /></StackPanel><TextBlock Text="{Binding Status}" Foreground="#A7B3C0" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" /></DockPanel>
+    </Border>
+  </Grid>
+</Window>

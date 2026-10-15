@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>RawSpeed</AssemblyName>
+    <RootNamespace>RawSpeed.App</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.1.0</Version>
+    <Description>A lightweight non-destructive RAW photo editor for Windows.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../RawSpeed.Core/RawSpeed.Core.csproj" />
+    <ProjectReference Include="../RawSpeed.Imaging/RawSpeed.Imaging.csproj" />
+    <ProjectReference Include="../RawSpeed.Metadata/RawSpeed.Metadata.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../presets/*.cube" Link="presets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../third-party-notices/**/*" Link="third-party-notices/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
