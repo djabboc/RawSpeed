@@ -1,0 +1,23 @@
+RawSpeed import, 2026-10-16
+
+Six original LUTs and SPEKTRAFILM_LICENSE.txt were copied byte-for-byte from:
+https://github.com/CyberTimon/RapidRAW/tree/56aa54b1d16afab7f3ad53a32845c093545704b3/src-tauri/resources/film_luts
+
+Original author: Andrea Volpato
+Canonical source: https://github.com/andreavolpato/spektrafilm
+License: CC BY-SA 4.0. See originals/SPEKTRAFILM_LICENSE.txt, preserved unchanged.
+Original file checksums and lengths are recorded in sources.json.
+
+RawSpeed creates separate 33^3 display-sRGB adapters at first use in its local
+user cache. These are derivatives, not the original LUT files. The adapter
+applies the inverse sRGB transfer function, then the Panasonic V-Log encoding,
+then the original film LUT using trilinear interpolation. The original inputs
+and outputs are Panasonic V-Log and sRGB, respectively. The generated adapters
+remain CC BY-SA 4.0 and contain attribution, original source hash, and version.
+The application also copies this license and a change notice to the cache.
+
+This display-referred adaptation is not a reproduction of RapidRAW's original
+scene-linear RAW pipeline, tone mapper replacement, or tetrahedral interpolation.
+Clipped highlights and original scene exposure cannot be recovered from sRGB.
+
+Modifier: RawSpeed contributors. Algorithm version: rawspeed-display-v1.

@@ -1,0 +1,154 @@
+{
+  "repository": "https://github.com/CyberTimon/RapidRAW-Presets",
+  "commit": "2e08bee4484a0a55db9b91553b19c96c926ef3cc",
+  "license": "No license supplied by upstream; local download only; not redistributed with RawSpeed",
+  "files": [
+    {
+      "name": "ARP Fizz",
+      "creator": "Anton Rehrl",
+      "file": "ARP Fizz.rrpreset",
+      "sha256": "433771c12206f56855fdeeea7ecb3c5a806d46bd9b703161d24ec85f65b746ca",
+      "bytes": 7528
+    },
+    {
+      "name": "AVOR - Absolute Polaroid",
+      "creator": "avoiceofreason",
+      "file": "AVOR - Absolute Polaroid.rrpreset",
+      "sha256": "5de634ab81926d4a50b0f605097cb9598088dcb304f460862a9644c81cf3cfab",
+      "bytes": 3943
+    },
+    {
+      "name": "AVOR - Dynamic Black and White",
+      "creator": "avoiceofreason",
+      "file": "AVOR - Dynamic Black and White.rrpreset",
+      "sha256": "7a835fcc7ee5f5a4949284c384e5e5f40337ece109f886f036c857fbc893654c",
+      "bytes": 4390
+    },
+    {
+      "name": "AVOR - Dynamic Velvia",
+      "creator": "avoiceofreason",
+      "file": "AVOR - Dynamic Velvia.rrpreset",
+      "sha256": "0697a93196cdf741fddd327a8587cbb6c3a38a5d408053ab89c59bb314da3406",
+      "bytes": 4117
+    },
+    {
+      "name": "AVOR - Urban Mood",
+      "creator": "avoiceofreason",
+      "file": "AVOR - Urban Mood.rrpreset",
+      "sha256": "3ae92abff0f23e810fd1f4ac3b46c2ceae872046b07c652a660ee70eacdbcc1f",
+      "bytes": 5070
+    },
+    {
+      "name": "AVOR - Urban Myth",
+      "creator": "avoiceofreason",
+      "file": "AVOR - Urban Myth.rrpreset",
+      "sha256": "26298b287318fb6b1af0fdefb9e6b5fdeb1321839cc171c28b455c24cf25e5bb",
+      "bytes": 4259
+    },
+    {
+      "name": "Casper",
+      "creator": "Kacper Węgrowski",
+      "file": "Casper.rrpreset",
+      "sha256": "2ab376374a98241be7ff74257e2ea3b369450ca46e0a0a1bbc361c6477f5737b",
+      "bytes": 4435
+    },
+    {
+      "name": "Cinematic",
+      "creator": "Timon Käch",
+      "file": "Cinematic.rrpreset",
+      "sha256": "c0c93b97ed814c0177fbcc1a49eecc742c886bb5b6885384f262cf745ff70aa5",
+      "bytes": 4073
+    },
+    {
+      "name": "Desert",
+      "creator": "Timon Käch",
+      "file": "Desert.rrpreset",
+      "sha256": "74b64dbe50c379c18c7b4950d50409b45f89eba0fe9f9190db0952a576a020aa",
+      "bytes": 4038
+    },
+    {
+      "name": "Dramatic B&W",
+      "creator": "Timon Käch",
+      "file": "Dramatic B&W.rrpreset",
+      "sha256": "098adee69be0e1b4360218df6d2ddf4429ce079a02b04be37af1046131848e9f",
+      "bytes": 3735
+    },
+    {
+      "name": "Golden Hour Glow",
+      "creator": "Timon Käch",
+      "file": "Golden Hour Glow.rrpreset",
+      "sha256": "ea4017bec99f8755b9d699a1f0230e93cd810a301bb377d4a0603fffb8739f96",
+      "bytes": 4201
+    },
+    {
+      "name": "Hyper exposed",
+      "creator": "Matt Kelly",
+      "file": "Hyper.exposed.rrpreset",
+      "sha256": "3b8a073da9734c67d638c5fbcc82600fd6b113be617611b5d2ef7191a434d817",
+      "bytes": 4125
+    },
+    {
+      "name": "Mattia",
+      "creator": "Kacper Węgrowski",
+      "file": "Mattia.rrpreset",
+      "sha256": "4397c838135c055c82dbcff35ebb2613ff083955f3dc03f3895f484ee9f99072",
+      "bytes": 4351
+    },
+    {
+      "name": "Misty",
+      "creator": "ellatuk",
+      "file": "Misty.rrpreset",
+      "sha256": "e73539c7f5c6ea8103fa91494188733e9171b492b06a25eb14e074d587e068bc",
+      "bytes": 8023
+    },
+    {
+      "name": "Moody Forest",
+      "creator": "Timon Käch",
+      "file": "Moody Forest.rrpreset",
+      "sha256": "c70a63cfafd43e6a4c38f741b3871a56e10bc7515f179ac784c2f60a612bcd7d",
+      "bytes": 4090
+    },
+    {
+      "name": "Urban Teal & Orange",
+      "creator": "Timon Käch",
+      "file": "Urban Teal & Orange.rrpreset",
+      "sha256": "ce33327b41f0065957329ea0852dbebcb2f5117589efd648b18eb6659cda1a94",
+      "bytes": 4144
+    },
+    {
+      "name": "Urban Matte",
+      "creator": "ArqRichard",
+      "file": "Urban.Matte.rrpreset",
+      "sha256": "91acfff460d37da92c57f279efd2a8167a335e6a01969583167cde5a011a2e17",
+      "bytes": 6567
+    },
+    {
+      "name": "Vadim",
+      "creator": "Kacper Węgrowski",
+      "file": "Vadim.rrpreset",
+      "sha256": "ad0bb19d3e2765b911a2e2b4847f6a275bc5bf1624d8d54a78d8442893fa1c9a",
+      "bytes": 4451
+    },
+    {
+      "name": "Vintage Film",
+      "creator": "Timon Käch",
+      "file": "Vintage Film.rrpreset",
+      "sha256": "311e3f24c8c2d070f3a00438b4f6a63f470fa6cd28b28b22a5628db7403f0fb4",
+      "bytes": 4106
+    },
+    {
+      "name": "Film Inspired P400UC _rev2",
+      "creator": "wholemonkey",
+      "file": "wholemonkey_Film-Inspired-P400UC_rev2.rrpreset",
+      "sha256": "ad67687e067826bcfd7306a3154a325187045d68901a6104d558fe85ddb30271",
+      "bytes": 4862
+    },
+    {
+      "name": "Upstream manifest",
+      "creator": "RapidRAW community",
+      "file": "manifest.json",
+      "sha256": "a1b7da1bf002ffbe376b833a7ecccdd997ef8a1e4231b813a2684e5351b63bf1",
+      "bytes": 77241
+    }
+  ]
+}

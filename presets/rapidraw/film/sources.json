@@ -1,0 +1,52 @@
+{
+  "repository": "https://github.com/CyberTimon/RapidRAW",
+  "commit": "56aa54b1d16afab7f3ad53a32845c093545704b3",
+  "directory": "src-tauri/resources/film_luts",
+  "author": "Andrea Volpato",
+  "canonicalSource": "https://github.com/andreavolpato/spektrafilm",
+  "license": "CC BY-SA 4.0",
+  "files": [
+    {
+      "name": "F-Pro 400H",
+      "file": "F-Pro 400H.cube",
+      "sha256": "467343b0a9b935daa6973557d37ed644ed754c89b77eafd72bed104bfc031edb",
+      "bytes": 610298
+    },
+    {
+      "name": "K-Ektar 100",
+      "file": "K-Ektar 100.cube",
+      "sha256": "cdc0bfd05d31a26a7295a7e5f2e16095dae27f03c3483d4ba0ebb301b6f705ae",
+      "bytes": 611771
+    },
+    {
+      "name": "K-Gold 200",
+      "file": "K-Gold 200.cube",
+      "sha256": "2ae72e6f1d9d38e73ba408f3f2e208f4b5f388f8a2824d70c2b2d177772f98fd",
+      "bytes": 609180
+    },
+    {
+      "name": "K-Portra 400",
+      "file": "K-Portra 400.cube",
+      "sha256": "270a33eb687bdfe59a17b9d492981d8e7802ddd3d8f9c4d51fadf77b5258c48d",
+      "bytes": 608966
+    },
+    {
+      "name": "K-Vision 250D Cinematic",
+      "file": "K-Vision 250D Cinematic.cube",
+      "sha256": "a37f86156445400be06ed67295c7ff5ed6d40360ac53881c738cf1328077919f",
+      "bytes": 612831
+    },
+    {
+      "name": "K-Vision 500T Cinematic",
+      "file": "K-Vision 500T Cinematic.cube",
+      "sha256": "d7521d74b5394ab584c988b239dac178cee899a826ca680240d597c1a274b72e",
+      "bytes": 612482
+    },
+    {
+      "name": "SPEKTRAFILM_LICENSE",
+      "file": "SPEKTRAFILM_LICENSE.txt",
+      "sha256": "76d629501783ae52e8d63aee1e054c1e1a9713b9fe7d36fb306e25b1d14b24e9",
+      "bytes": 23677
+    }
+  ]
+}
