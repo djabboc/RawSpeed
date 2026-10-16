@@ -4,7 +4,7 @@
 .idea/
 .nuget/
 artifacts/
-example/
+[Ee][Xx][Aa][Mm][Pp][Ll][Ee]/
 *.user
 *.rawspeed.json
 *.tmp

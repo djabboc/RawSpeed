@@ -10,6 +10,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
     dotnet run --project tests/RawSpeed.App.Tests -c Release --no-build
     if ($LASTEXITCODE -ne 0) { throw 'App tests failed.' }
+    dotnet run --project tests/RawSpeed.CatalogTests -c Release --no-build
+    if ($LASTEXITCODE -ne 0) { throw 'Filter catalog tests failed.' }
+    dotnet run --project tests/RawSpeed.Export.Tests -c Release --no-build
+    if ($LASTEXITCODE -ne 0) { throw 'Export and preferences tests failed.' }
     dotnet run --project tools/RawSpeed.UiProbe -c Release --no-build
     if ($LASTEXITCODE -ne 0) { throw 'WPF component checks failed.' }
     if ($WithSamples) {

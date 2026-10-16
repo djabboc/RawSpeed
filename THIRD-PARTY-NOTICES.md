@@ -69,4 +69,6 @@ Magick.NET 的 `.nuspec` 记录上游提交 `79bb8700d7fe3a564f62926ab299fc2520c
 4. 若使用 self-contained .NET 发布，额外保留该运行时分发包要求的许可和 notices。框架依赖部署则在安装说明明确 Windows Desktop Runtime 要求。
 5. 检查 LUT、样片、图标与未来模型权重各自的再分发许可。`example/` 和 `artifacts/` 当前用于本地验证，不因程序公开源码而自动获得照片的发布权。
 
-RapidRAW、darktable、RawTherapee 仅作为调研参考，未作为本项目依赖引入；不能把这些项目的 AGPL/GPL 代码复制进来而省略相应许可处理。
+RapidRAW、darktable、RawTherapee 的应用源码未作为本项目依赖引入。0.2 附带 RapidRAW 中的六份 Spektrafilm 原始 LUT（Andrea Volpato，CC BY-SA 4.0），原始许可、固定提交和 SHA-256 位于 `presets/rapidraw/film/`；sRGB 适配和修改说明见 [滤镜目录](docs/lut-catalog.md)。适配缓存保留来源和相同许可标注。
+
+官方 RapidRAW-Presets 社区仓库没有声明再分发许可，其二十份配方仅下载到被忽略的 `community-local` 本地目录，不进入 Git 或默认发布包。仓库保存固定版本下载脚本与来源清单。不能把 RapidRAW 主项目的 AGPL 许可套用到这个独立仓库，也不能将参数近似适配描述为原程序逐像素复现。
