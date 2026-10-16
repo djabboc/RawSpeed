@@ -13,11 +13,12 @@ var cases = new (string Name, Action Run)[]
     ("Malformed, oversized, non-finite and shaper LUTs are rejected", InvalidLuts),
     ("Exposure, white balance, saturation, hue, and curves", ColorAdjustments),
     ("Public curve evaluation matches rendered curve pixels", CurvePreview),
-    ("Bilateral denoise lowers variance while preserving an edge and alpha", Denoise),
+    ("Spatial denoise lowers variance while preserving an edge and alpha", Denoise),
     ("Invalid dimensions, ranges and crop rectangles are rejected", InvalidInputs),
     ("Pre-cancellation and cancellation during rendering", Cancellation),
     ("Concurrent renders are deterministic and do not mutate their source", ConcurrentRenders)
 };
+cases = cases.Concat(AdvancedTests.Cases).ToArray();
 int failures = 0;
 foreach (var (name, run) in cases)
 {
@@ -256,7 +257,16 @@ static void Benchmark()
             ("identity + histogram", new EditSettings(), null),
             ("color + histogram", new EditSettings { Exposure = 0.4, Contrast = 20, Saturation = 10, Temperature = 15, CurveMidtones = 10 }, null),
             ("color + 3D LUT", new EditSettings { Exposure = 0.4, Saturation = 10 }, identity),
-            ("denoise 60", new EditSettings { Denoise = 60 }, null),
+            ("master + RGB curves", new EditSettings
+            {
+                MasterCurve = new ToneCurve([new(0, 0), new(0.22, 0.15), new(0.55, 0.63), new(1, 1)]),
+                RedCurve = new ToneCurve([new(0, 0.03), new(0.5, 0.54), new(1, 1)]),
+                GreenCurve = new ToneCurve([new(0, 0), new(0.6, 0.57), new(1, 1)]),
+                BlueCurve = new ToneCurve([new(0, 0.05), new(0.7, 0.65), new(1, 0.97)])
+            }, null),
+            ("luma denoise 60", new EditSettings { LuminanceDenoise = 60 }, null),
+            ("chroma denoise 60", new EditSettings { ColorDenoise = 60 }, null),
+            ("combined denoise 60", new EditSettings { Denoise = 60 }, null),
             ("straighten + color", new EditSettings { Straighten = 5, Exposure = 0.4 }, null)
         })
         {

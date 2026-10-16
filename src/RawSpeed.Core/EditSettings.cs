@@ -9,9 +9,17 @@ public sealed record EditSettings
     public double Contrast { get; init; }
     public double Highlights { get; init; }
     public double Shadows { get; init; }
+    public double Midtones { get; init; }
     public double Saturation { get; init; }
     public double Hue { get; init; }
     public double Denoise { get; init; }
+    public double LuminanceDenoise { get; init; }
+    public double ColorDenoise { get; init; }
+    public double DenoiseDetail { get; init; } = 50;
+    public ToneCurve? MasterCurve { get; init; }
+    public ToneCurve? RedCurve { get; init; }
+    public ToneCurve? GreenCurve { get; init; }
+    public ToneCurve? BlueCurve { get; init; }
     public double CurveShadows { get; init; }
     public double CurveMidtones { get; init; }
     public double CurveHighlights { get; init; }
