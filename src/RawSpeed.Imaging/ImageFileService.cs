@@ -80,30 +80,38 @@ public sealed class ImageFileService
     }
 
     /// <summary>Exports sRGB RGBA8 pixels to a new JPEG, PNG, or TIFF file without overwriting existing files.</summary>
-    public async Task ExportAsync(
+    public Task ExportAsync(
         string path,
         int width,
         int height,
         byte[] rgba,
         int quality,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        ExportAsync(path, width, height, rgba,
+            new ExportOptions { Format = ExportOptions.FormatFromPath(path), Quality = quality }, cancellationToken);
+
+    /// <summary>Exports an edited sRGB RGBA8 buffer using an immutable size, color, metadata and encoding specification.</summary>
+    /// <remarks>No source or existing destination is overwritten. DPI changes print size only; resizing is controlled separately.</remarks>
+    public async Task ExportAsync(string path, int width, int height, byte[] rgba, ExportOptions options, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(rgba);
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(quality, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(quality, 100);
         if (rgba.LongLength != checked((long)width * height * 4))
             throw new ArgumentException("The pixel buffer must contain exactly width × height × 4 RGBA bytes.", nameof(rgba));
 
         string destination = Path.GetFullPath(path);
-        MagickFormat format = Path.GetExtension(destination).ToLowerInvariant() switch
+        var outputSize = options.ResolveDimensions(width, height);
+        if (ExportOptions.FormatFromPath(destination) != options.Format)
+            throw new ArgumentException("The destination extension must match the selected format.", nameof(path));
+        MagickFormat format = options.Format switch
         {
-            ".jpg" or ".jpeg" => MagickFormat.Jpeg,
-            ".png" => MagickFormat.Png,
-            ".tif" or ".tiff" => MagickFormat.Tiff,
-            _ => throw new NotSupportedException("Export supports JPEG (.jpg/.jpeg), PNG (.png), and TIFF (.tif/.tiff)."),
+            ExportFormat.Jpeg => MagickFormat.Jpeg,
+            ExportFormat.Png => MagickFormat.Png,
+            ExportFormat.Tiff => MagickFormat.Tiff,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
 
         if (File.Exists(destination))
@@ -112,6 +120,12 @@ public sealed class ImageFileService
         string? directory = Path.GetDirectoryName(destination);
         if (directory is null || !Directory.Exists(directory))
             throw new DirectoryNotFoundException("The export destination folder does not exist.");
+        if (options.MetadataMode != ExportMetadataMode.None)
+        {
+            if (string.IsNullOrWhiteSpace(options.SourcePath))
+                throw new ArgumentException("A source file is required to preserve capture metadata.", nameof(options));
+            ValidateInput(options.SourcePath);
+        }
 
         await NativeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -123,11 +137,25 @@ public sealed class ImageFileService
                 image.ReadPixels(rgba, new PixelReadSettings((uint)width, (uint)height, StorageType.Char, PixelMapping.RGBA));
                 image.ColorSpace = ColorSpace.sRGB;
                 image.SetProfile(ColorProfiles.SRGB);
-                image.Depth = 8;
+                // Keep resampling and ICC transforms at native Q16 precision; quantize only when encoding.
+                image.Depth = 16;
+                if (image.Width != outputSize.Width || image.Height != outputSize.Height)
+                {
+                    image.FilterType = FilterType.Lanczos;
+                    image.Resize(new MagickGeometry((uint)outputSize.Width, (uint)outputSize.Height) { IgnoreAspectRatio = true });
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (options.ColorProfile == ExportColorProfile.AdobeRgb)
+                    image.TransformColorSpace(ColorProfiles.AdobeRGB1998, ColorTransformMode.HighRes);
+                image.Depth = (uint)options.BitDepth;
+                image.Density = new Density(options.Dpi, options.Dpi, DensityUnit.PixelsPerInch);
+                image.Orientation = Orientation.TopLeft;
                 image.Format = format;
                 if (format == MagickFormat.Jpeg)
                 {
-                    image.Quality = (uint)quality;
+                    image.Quality = (uint)options.Quality;
+                    image.Settings.Interlace = options.JpegProgressive ? Interlace.Plane : Interlace.NoInterlace;
+                    image.Settings.SetDefine(MagickFormat.Jpeg, "optimize-coding", options.JpegOptimize);
                     image.BackgroundColor = MagickColors.White;
                     image.Alpha(AlphaAction.Remove);
                 }
@@ -135,8 +163,21 @@ public sealed class ImageFileService
                 {
                     // PNG quality is a zlib/filter setting, not a visual quality control. Applying
                     // JPEG's 95 here selects level 9 and makes noisy full-size photographs very slow.
-                    image.Settings.SetDefine(MagickFormat.Png, "compression-level", 2);
+                    image.Settings.SetDefine(MagickFormat.Png, "compression-level", options.PngCompressionLevel);
+                    // Force the requested container depth; otherwise the encoder optimizes replicated
+                    // 16-bit RGBA8 values back to 8 bits (or indexed/gray output for simple fixtures).
+                    image.Settings.SetDefine(MagickFormat.Png, "bit-depth", options.BitDepth);
+                    image.Settings.SetDefine(MagickFormat.Png, "color-type", 6);
                 }
+                else if (format == MagickFormat.Tiff)
+                    image.Settings.Compression = options.TiffCompression switch
+                    {
+                        ExportTiffCompression.None => CompressionMethod.NoCompression,
+                        ExportTiffCompression.Lzw => CompressionMethod.LZW,
+                        ExportTiffCompression.Zip => CompressionMethod.Zip,
+                        _ => throw new ArgumentOutOfRangeException(nameof(options)),
+                    };
+                ExportMetadata.Apply(image, options);
 
                 // A same-directory temporary file keeps publication atomic and prevents partial outputs.
                 string temporary = Path.Combine(directory, $".rawspeed-{Guid.NewGuid():N}.tmp");

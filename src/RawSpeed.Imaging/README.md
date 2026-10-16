@@ -31,10 +31,18 @@ Export writes JPEG, PNG or TIFF with sRGB color information. JPEG/TIFF embed the
 profile; the PNG encoder may represent the same standard profile as sRGB/gAMA chunks.
 A same-directory temporary
 file is moved atomically to the final destination. Existing files are never replaced,
-including source photographs. Export intentionally does not copy GPS/EXIF metadata.
-The quality parameter controls JPEG only. PNG uses fast lossless zlib level 2;
-PNG and TIFF preserve the RGBA8 pixel values. TIFF is currently 8-bit, not 16-bit RAW
-development output. JPEG composites transparency over white.
+including source photographs. `ExportOptions` controls resizing, DPI, JPEG quality
+and progressive encoding, PNG compression, TIFF compression, 8/16-bit output, sRGB /
+Adobe RGB conversion, and optional safe capture metadata with separately selected GPS.
+MetadataExtractor 2.9.3 reads standard RAW IFDs when LibRaw does not expose the source EXIF.
+The old quality-based overload remains compatible and exports no capture metadata.
+
+The quality parameter controls JPEG only. PNG defaults to fast lossless zlib level 2.
+Without resizing or color conversion, PNG and TIFF preserve the input RGBA8 values.
+16-bit output containers retain computed conversion/resampling precision, but cannot
+recover source RAW precision already lost before the 8-bit editing buffer. JPEG
+composites transparency over white. See [export options and shortcuts](../../docs/export-and-shortcuts.md)
+for the complete metadata policy and supported options.
 
 ## Verification
 

@@ -34,7 +34,8 @@
       "rawspeed.imaging": {
         "type": "Project",
         "dependencies": {
-          "Magick.NET-Q16-AnyCPU": "[15.0.0, )"
+          "Magick.NET-Q16-AnyCPU": "[15.0.0, )",
+          "MetadataExtractor": "[2.9.3, )"
         }
       },
       "rawspeed.metadata": {
