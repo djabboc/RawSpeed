@@ -10,7 +10,7 @@ public sealed class CurveCanvas : FrameworkElement
 {
     internal static readonly IReadOnlyList<CurvePoint> Identity = new[] { new CurvePoint(0, 0), new CurvePoint(1, 1) };
     private bool _dragging;
-    public CurveCanvas() { Focusable = true; Cursor = Cursors.Cross; }
+    public CurveCanvas() { Focusable = true; Cursor = Cursors.Cross; InputMethod.SetIsInputMethodEnabled(this, false); }
     public static readonly DependencyProperty CurveProperty = DependencyProperty.Register(nameof(Curve), typeof(ToneCurve), typeof(CurveCanvas), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault | FrameworkPropertyMetadataOptions.AffectsRender));
     public ToneCurve? Curve { get => (ToneCurve?)GetValue(CurveProperty); set => SetValue(CurveProperty, value); }
     public int SelectedIndex { get; private set; }

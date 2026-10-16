@@ -134,7 +134,7 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var key = e.Key switch { Key.System => e.SystemKey, Key.ImeProcessed => e.ImeProcessedKey, _ => e.Key };
         if (_shortcuts.MatchKey(key, Keyboard.Modifiers) is { } action) { ExecuteAction(action); e.Handled = true; }
     }
     private static bool IsTextEntry(DependencyObject? element)

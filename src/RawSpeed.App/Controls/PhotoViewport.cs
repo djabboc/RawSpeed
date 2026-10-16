@@ -24,7 +24,7 @@ public sealed class PhotoViewport : FrameworkElement
     private static readonly Brush Backdrop = new SolidColorBrush(Color.FromRgb(12, 15, 19));
     private static readonly Pen CropPen = new(Brushes.LightGreen, 1.5);
 
-    public PhotoViewport() { ClipToBounds = true; Focusable = true; }
+    public PhotoViewport() { ClipToBounds = true; Focusable = true; InputMethod.SetIsInputMethodEnabled(this, false); }
     private static DependencyProperty VisualProperty(string name, Type type, object? initial = null) => DependencyProperty.Register(name, type, typeof(PhotoViewport), new FrameworkPropertyMetadata(initial, FrameworkPropertyMetadataOptions.AffectsRender));
     public static readonly DependencyProperty SourceProperty = VisualProperty(nameof(Source), typeof(BitmapSource));
     public static readonly DependencyProperty BeforeProperty = VisualProperty(nameof(Before), typeof(BitmapSource));
