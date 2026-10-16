@@ -8,6 +8,8 @@ using RawSpeed.App.Models;
 using RawSpeed.App.Services;
 using RawSpeed.App.ViewModels;
 using RawSpeed.Core;
+using RawSpeed.App.Controls;
+using System.Windows;
 
 namespace RawSpeed.App.Tests;
 
@@ -28,8 +30,7 @@ internal static class Program
             finally
             {
                 // Every test artifact is a direct child of this uniquely created directory.
-                foreach (string file in Directory.EnumerateFiles(TestDirectory)) File.Delete(file);
-                Directory.Delete(TestDirectory);
+                Directory.Delete(TestDirectory, recursive: true);
                 Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
             }
         }));
@@ -51,7 +52,12 @@ internal static class Program
             ("Missing LUT fallback can be saved without leaving dirty state", MissingLutAsync),
             ("Malformed image shows a recoverable error and next selection loads", FailedDecodeAsync),
             ("Thumbnail memory remains bounded independently of source dimensions", ThumbnailAsync),
-            ("Cancelled loading can be retried by reopening the same photo", CancelAndRetryAsync)
+            ("Cancelled loading can be retried by reopening the same photo", CancelAndRetryAsync),
+            ("Curves, gray balance, midtones and denoise survive history and recipe roundtrip", AdvancedEditsAsync),
+            ("Ratings persist, filter, group and navigate without modifying image files", RatingsAsync),
+            ("Full-resolution detail stays owned by the selected photo", DetailOwnershipAsync),
+            ("Crop handles and free curves handle tight bounds safely", InteractionGeometryAsync),
+            ("Removing a filter cancels pending application and allows applying it again", FilterOwnershipAsync)
         };
         foreach (var (name, run) in tests)
         {
@@ -180,7 +186,7 @@ internal static class Program
         await UntilAsync(() => editor.Preview?.PixelWidth == 32,
             () => $"Cropped preview (current {editor.Preview?.PixelWidth}x{editor.Preview?.PixelHeight}, crop {editor.Settings.Crop}, loading {editor.IsLoading}, error {editor.Error})");
         editor.ShowBefore = true;
-        await UntilAsync(() => editor.Preview?.PixelWidth == 64, "Original comparison");
+        True(editor.ComparisonMode == 1 && editor.BeforePreview?.PixelWidth == 32, "Before comparison must keep crop and orientation aligned.");
         editor.ShowBefore = false;
         await UntilAsync(() => editor.Preview?.PixelWidth == 32, "Return from original comparison");
         editor.RotateRightCommand.Execute(null);
@@ -236,8 +242,8 @@ internal static class Program
         using var editor = new EditorViewModel();
         editor.AddFiles([source]); await ReadyAsync(editor);
         PhotoItem photo = editor.Photos[0];
-        True(photo.Thumbnail is { PixelWidth: > 0 and <= 160, PixelHeight: > 0 and <= 160 },
-            "Filmstrip retained a full preview instead of a thumbnail bounded to 160 pixels.");
+        True(photo.Thumbnail is { PixelWidth: > 0 and <= 240, PixelHeight: > 0 and <= 240 },
+            "Filmstrip retained a full preview instead of a thumbnail bounded to 240 pixels.");
         True(photo.Thumbnail!.IsFrozen, "Filmstrip thumbnail must be frozen.");
         Equal(1024, photo.OriginalWidth); Equal(768, photo.OriginalHeight);
     }
@@ -254,6 +260,118 @@ internal static class Program
         editor.AddFiles([source]);
         await ReadyAsync(editor);
         True(editor.Photos.Count == 1, "Retry should not duplicate the photo in the filmstrip.");
+    }
+
+    private static async Task AdvancedEditsAsync()
+    {
+        string source = CreateJpeg("advanced", 100, 80, 135, 110, 85);
+        using var editor = new EditorViewModel(TestDirectory);
+        editor.AddFiles([source]); await ReadyAsync(editor);
+        editor.CurveChannel = 1;
+        var curve = new ToneCurve([new(0, 0.04), new(0.28, 0.41), new(0.74, 0.8), new(1, 0.97)]);
+        editor.ActiveCurve = curve;
+        editor.Midtones = 25;
+        editor.Highlights = -30;
+        editor.Shadows = 20;
+        editor.LuminanceDenoise = 45;
+        editor.ColorDenoise = 75;
+        editor.SampleGray(0.5, 0.5);
+        True(editor.Temperature != 0 || editor.Tint != 0, "Gray sampler did not correct a warm neutral patch.");
+        await SaveAsync(editor, source);
+        var recipe = await RecipeStore.LoadAsync(source);
+        True(recipe?.Settings.RedCurve?.Equals(curve) == true, "Free curve points did not roundtrip.");
+        Equal(25, recipe!.Settings.Midtones); Equal(45, recipe.Settings.LuminanceDenoise); Equal(75, recipe.Settings.ColorDenoise);
+        editor.ResetCurves();
+        True(editor.ActiveCurve is null, "All-channel reset failed.");
+        editor.UndoCommand.Execute(null);
+        True(editor.ActiveCurve?.Equals(curve) == true, "Undo did not restore the immutable curve.");
+        editor.SelectedToolTab = 1;
+        editor.ApplyCrop(new(0.1, 0.15, 0.6, 0.7));
+        True(editor.CropMode, "Immediate crop must keep handles available in composition mode.");
+        await UntilAsync(() => editor.Preview?.PixelWidth == 100, "Uncropped composition canvas");
+        editor.SelectedToolTab = 0;
+        await UntilAsync(() => editor.Preview?.PixelWidth == 60, "Immediate crop outside composition mode");
+    }
+
+    private static async Task RatingsAsync()
+    {
+        string a = CreateJpeg("rate-a", 32, 24, 80, 100, 120), b = CreateJpeg("rate-b", 32, 24, 120, 100, 80);
+        byte[] original = await File.ReadAllBytesAsync(a);
+        using (var editor = new EditorViewModel(TestDirectory))
+        {
+            editor.AddFiles([a, b]); await ReadyAsync(editor);
+            editor.AutoAdvance = true;
+            editor.SetRating(4);
+            await ReadyAsync(editor);
+            True(editor.SelectedPhoto?.Path == b, "Rating must advance to the next visible photo.");
+            editor.SetRating(2);
+            editor.GroupRatings = true;
+            editor.RatingFilter = 5;
+            await ReadyAsync(editor);
+            True(editor.PhotosView.Cast<PhotoItem>().Count() == 1 && editor.SelectedPhoto?.Path == a, "Rating threshold filter/navigation mismatch.");
+            True(editor.PhotosView.Groups?.Count == 1, "Rating grouping was not applied.");
+        }
+        using var reloaded = new EditorViewModel(TestDirectory);
+        reloaded.AddFiles([a, b]); await ReadyAsync(reloaded);
+        Equal(4, reloaded.Photos[0].Rating); Equal(2, reloaded.Photos[1].Rating);
+        True(original.SequenceEqual(await File.ReadAllBytesAsync(a)), "Rating changed the original image.");
+    }
+
+    private static async Task DetailOwnershipAsync()
+    {
+        string large = CreateJpeg("detail-large", 1800, 1200, 90, 120, 150), small = CreateJpeg("detail-next", 60, 40, 150, 120, 90);
+        using var editor = new EditorViewModel(TestDirectory);
+        editor.AddFiles([large, small]); await ReadyAsync(editor);
+        True(!editor.IsFullResolution && editor.Preview?.PixelWidth == 1600, "Initial preview should stay bounded.");
+        await editor.EnsureFullResolutionAsync();
+        True(editor.IsFullResolution && editor.Preview?.PixelWidth == 1800, "Detail request did not publish real source pixels.");
+        editor.SelectedPhoto = editor.Photos[1]; await ReadyAsync(editor);
+        True(editor.Preview?.PixelWidth == 60, "Full image from the previous photo replaced the next selection.");
+    }
+
+    private static Task InteractionGeometryAsync()
+    {
+        var crop = new Rect(0.2, 0.2, 0.6, 0.6);
+        var moved = CropInteraction.Drag(crop, 8, new(0.5, 0.5), new(2, -1));
+        True(Math.Abs(moved.X - 0.4) < 1e-10 && moved.Y == 0 && moved.Size == crop.Size, "Moving crop must clamp position without resizing.");
+        for (int handle = 0; handle < 8; handle++)
+        {
+            var resized = CropInteraction.Drag(crop, handle, new(0.5, 0.5), new(3, -3));
+            True(resized.Left >= 0 && resized.Right <= 1 && resized.Top >= 0 && resized.Bottom <= 1 && resized.Width > 0 && resized.Height > 0, "Crop handle crossed or escaped the canvas.");
+        }
+        var tiny = CropInteraction.Drag(new Rect(0.999, 0.999, 0.001, 0.001), 4, new(1, 1), new(0, 0));
+        True(tiny.Width > 0 && tiny.Height > 0, "Tiny legacy crop must remain editable.");
+        var drawn = CropInteraction.Drag(crop, 9, new(0.8, 0.9), new(0.1, 0.2));
+        True(Math.Abs(drawn.Width - 0.7) < 1e-10, "Reverse-direction crop drawing failed.");
+        var graph = new CurveCanvas();
+        True(graph.InsertPoint(0.5, 0.4), "Point insertion failed.");
+        graph.MoveSelected(0.7, 0.6);
+        True(graph.Curve!.Points[1] == new CurvePoint(0.7, 0.6), "Point X/Y movement is unexpectedly locked.");
+        graph.DeleteSelected();
+        True(graph.Curve.Points.Count == 2, "Interior point deletion failed.");
+        graph.Curve = new ToneCurve([new(0, 0), new(0.5, 0.4), new(0.500004, 0.6), new(1, 1)]);
+        True(graph.InsertPoint(0.500002, 0.5), "Closely spaced legal points must be supported.");
+        graph.MoveSelected(0.6, 0.7);
+        True(graph.Curve.Points[2].X < graph.Curve.Points[3].X, "Dense curve points must preserve their order.");
+        return Task.CompletedTask;
+    }
+
+    private static async Task FilterOwnershipAsync()
+    {
+        string source = CreateJpeg("filter-owner", 48, 32, 120, 100, 80);
+        string lut = Path.Combine(TestDirectory, "identity.cube");
+        await File.WriteAllTextAsync(lut, "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n");
+        using var editor = new EditorViewModel(TestDirectory);
+        editor.AddFiles([source]); await ReadyAsync(editor);
+        var preset = new FilterPreset { Id = lut, Name = "Identity", Category = "Test", Kind = FilterPresetKind.Cube, OriginalPath = lut, LutPath = lut };
+        editor.SelectedFilter = preset;
+        editor.ClearLutCommand.Execute(null);
+        await Task.Delay(100);
+        True(!editor.HasLut, "A pending filter overwrote the later remove action.");
+        editor.SelectedFilter = preset;
+        await UntilAsync(() => editor.HasLut, "Reapply the same preset");
+        editor.RatingFilter = 6;
+        True(editor.SelectedPhoto is null && !editor.HasImage && editor.Preview is null, "An empty rating filter must not leave a hidden photo editable.");
     }
 
     private static async Task SaveAsync(EditorViewModel editor, string source)

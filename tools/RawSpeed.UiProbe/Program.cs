@@ -12,6 +12,7 @@ using System.Windows.Threading;
 using RawSpeed.App;
 using RawSpeed.App.Controls;
 using RawSpeed.App.ViewModels;
+using RawSpeed.Core;
 
 namespace RawSpeed.UiProbe;
 
@@ -101,26 +102,55 @@ internal static class Program
             editor.CurveShadows = -16;
             editor.CurveMidtones = 14;
             editor.CurveHighlights = 7;
+            editor.ActiveCurve = new ToneCurve([new(0, 0.03), new(0.3, 0.22), new(0.65, 0.77), new(1, 1)]);
             await UntilAsync(() => editor.Preview is not null && !ReferenceEquals(before, editor.Preview), "Applying image adjustments");
             await LayoutAsync(host, 1480, 960);
             Check(save.IsEnabled && export.IsEnabled && editor.UndoCommand.CanExecute(null), "Loaded-state save/export/undo command bindings are enabled");
 
-            var photo = (Image)window.FindName("PhotoImage");
+            var photo = (PhotoViewport)window.FindName("Viewport");
             Check(photo.Source == editor.Preview && photo.ActualWidth > 100 && photo.ActualHeight > 100,
-                "PhotoImage binds the current preview and receives a usable measured size");
-            Check(editor.Photos[0].Thumbnail is { PixelWidth: <= 160, PixelHeight: <= 160 }, "Filmstrip uses a bounded thumbnail");
+                "PhotoViewport binds the current preview and receives a usable measured size");
+            Check(editor.Photos[0].Thumbnail is { PixelWidth: <= 240, PixelHeight: <= 240 }, "Filmstrip uses a bounded thumbnail");
             CheckHeaderBounds(host, save, export, 1480, 960);
 
             var histogram = Descendants<HistogramView>(host).Single();
-            var curve = Descendants<CurveView>(host).Single();
+            var curve = Descendants<CurveCanvas>(host).Single();
             Check(ReferenceEquals(histogram.Values, editor.Histogram) && histogram.Values is { Length: 768 }, "Histogram binding receives all three RGB channels");
-            Check(curve.Settings == editor.Settings, "Curve preview receives the effective edit settings");
+            Check(curve.Curve?.Equals(editor.ActiveCurve) == true, "Interactive curve receives the selected channel's immutable points");
             Check(HasPaintedContent(SaveElementRender(histogram, Path.Combine(output, "histogram-render.png"))), "Histogram OnRender produces nonempty colored geometry");
             Check(HasPaintedContent(SaveElementRender(curve, Path.Combine(output, "curve-render.png"))), "Curve OnRender produces nonempty curve/grid geometry");
             SaveRender(host, 1480, 960, Path.Combine(output, "window-render.png"));
 
+            var bounds = photo.ImageBounds;
+            var anchor = new Point(bounds.Left + bounds.Width * 0.35, bounds.Top + bounds.Height * 0.65);
+            photo.ZoomBy(1.5, anchor);
+            var zoomed = photo.ImageBounds;
+            Check(Math.Abs((anchor.X - zoomed.X) / zoomed.Width - 0.35) < 0.00001 &&
+                Math.Abs((anchor.Y - zoomed.Y) / zoomed.Height - 0.65) < 0.00001, "Pointer-anchored zoom preserves the image point beneath the pointer");
+            editor.ComparisonMode = 2;
+            await LayoutAsync(host, 1480, 960);
+            photo.Fit();
+            SaveRender(host, 1480, 960, Path.Combine(output, "window-compare.png"));
+            Check(ReferenceEquals(photo.Before, editor.BeforePreview), "Comparison binds the cached geometry-aligned original");
+            editor.ComparisonMode = 0;
+
             var tabs = Descendants<TabControl>(host).Single();
             tabs.SelectedIndex = 1;
+            await LayoutAsync(host, 1480, 960);
+            Check(editor.CropMode, "Composition tab activates immediate crop handles");
+            editor.ApplyCrop(new NormalizedRect(0.12, 0.1, 0.75, 0.8));
+            await LayoutAsync(host, 1480, 960);
+            Check(photo.Crop == editor.Settings.Crop && photo.Composition, "Crop overlay stays editable after a crop is committed");
+            SaveRender(host, 1480, 960, Path.Combine(output, "window-composition.png"));
+            tabs.SelectedIndex = 2;
+            await LayoutAsync(host, 1480, 960);
+            Check(!editor.CropMode, "Leaving composition hides the crop canvas");
+            SaveRender(host, 1480, 960, Path.Combine(output, "window-denoise.png"));
+            tabs.SelectedIndex = 3;
+            await LayoutAsync(host, 1480, 960);
+            Check(editor.Filters.Count >= 9, "LUT catalog includes built-ins and licensed local film styles");
+            SaveRender(host, 1480, 960, Path.Combine(output, "window-lut.png"));
+            tabs.SelectedIndex = 4;
             await LayoutAsync(host, 1480, 960);
             var metadata = (ListView)window.FindName("MetadataList");
             Check(metadata.Items.Count > 0 && ReferenceEquals(metadata.ItemsSource, editor.MetadataView), "EXIF tab creates and binds its metadata list");
@@ -192,7 +222,7 @@ internal static class Program
         FrameworkElement isolated = element switch
         {
             HistogramView histogram => new HistogramView { Values = histogram.Values },
-            CurveView curve => new CurveView { Settings = curve.Settings },
+            CurveCanvas curve => new CurveCanvas { Curve = curve.Curve },
             _ => throw new NotSupportedException("Only the custom chart controls have isolated renders.")
         };
         isolated.Measure(new Size(width, height));

@@ -7,7 +7,7 @@
     <RootNamespace>RawSpeed.App</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Description>A lightweight non-destructive RAW photo editor for Windows.</Description>
   </PropertyGroup>
   <ItemGroup>
@@ -17,6 +17,8 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="../../presets/*.cube" Link="presets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../presets/rapidraw/**/*" Exclude="../../presets/rapidraw/community-local/**/*;../../presets/rapidraw/**/.gitignore" Link="presets/rapidraw/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../presets/rapidraw/community-local/**/*" Exclude="../../presets/rapidraw/community-local/.gitignore" Link="presets/rapidraw/community-local/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
     <Content Include="../../third-party-notices/**/*" Link="third-party-notices/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

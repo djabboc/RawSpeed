@@ -7,6 +7,7 @@ namespace RawSpeed.App.Models;
 public sealed class PhotoItem(string path) : ObservableObject
 {
     private BitmapSource? _thumbnail;
+    private int _rating;
     public string Path { get; } = path;
     public string Name => System.IO.Path.GetFileName(Path);
     public string Kind => System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant();
@@ -14,4 +15,11 @@ public sealed class PhotoItem(string path) : ObservableObject
     public int OriginalWidth { get; set; }
     public int OriginalHeight { get; set; }
     public BitmapSource? Thumbnail { get => _thumbnail; set => SetProperty(ref _thumbnail, value); }
+    public int Rating
+    {
+        get => _rating;
+        set { if (SetProperty(ref _rating, Math.Clamp(value, 0, 5))) { OnPropertyChanged(nameof(Stars)); OnPropertyChanged(nameof(RatingGroup)); } }
+    }
+    public string Stars => new string('★', Rating) + new string('☆', 5 - Rating);
+    public string RatingGroup => Rating == 0 ? "未评级" : $"{Rating} 星";
 }

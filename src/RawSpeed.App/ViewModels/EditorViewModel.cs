@@ -16,7 +16,7 @@ using RawSpeed.Metadata;
 
 namespace RawSpeed.App.ViewModels;
 
-public sealed class EditorViewModel : ObservableObject, IDisposable
+public sealed partial class EditorViewModel : ObservableObject, IDisposable
 {
     private readonly ImageFileService _files = new();
     private readonly MetadataService _metadata = new();
@@ -28,6 +28,9 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     private readonly Dictionary<string, DecodedImage> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<string> _cacheOrder = new();
     private readonly Dictionary<string, CubeLut> _lutCache = new(StringComparer.OrdinalIgnoreCase);
+    private DecodedImage? _denoiseSource;
+    private byte[]? _denoisedPixels;
+    private (double Legacy, double Luminance, double Color, double Detail) _denoiseKey;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _renderCancellation;
     private CancellationTokenSource? _exportCancellation;
@@ -51,8 +54,11 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     private DateTime _lastEdit;
     private string? _lastEditProperty;
 
-    public EditorViewModel()
+    public EditorViewModel(string? stateDirectory = null, string? presetsDirectory = null)
     {
+        _ratings = new RatingStore(stateDirectory);
+        _catalog = new LutCatalogService(presetsDirectory);
+        InitializeWorkspace();
         MetadataView = CollectionViewSource.GetDefaultView(MetadataEntries);
         MetadataView.Filter = value => value is MetadataEntry entry &&
             ($"{entry.Group} {entry.Name} {entry.Value}").Contains(MetadataSearch, StringComparison.OrdinalIgnoreCase);
@@ -61,17 +67,17 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         ExportCommand = new AsyncCommand(ChooseExportAsync, ReportError, () => HasImage && !IsLoading && !IsExporting);
         SaveCommand = new AsyncCommand(SaveRecipeAsync, ReportError, () => HasImage && !IsLoading);
         ImportLutCommand = new AsyncCommand(ImportLutAsync, ReportError, () => HasImage);
-        ClearLutCommand = new RelayCommand(() => ChangeRecipe(_recipe with { LutPath = null }, "filter"), () => HasImage);
+        ClearLutCommand = new RelayCommand(() => { ClearFilterSelection(); ChangeRecipe(_recipe with { LutPath = null }, "filter"); }, () => HasImage);
         UndoCommand = new RelayCommand(Undo, () => _undo.Count > 0 && !IsLoading);
         RedoCommand = new RelayCommand(Redo, () => _redo.Count > 0 && !IsLoading);
-        ResetCommand = new RelayCommand(() => ChangeRecipe(EditRecipe.Default, "reset"), () => HasImage);
+        ResetCommand = new RelayCommand(() => { ClearFilterSelection(); ChangeRecipe(EditRecipe.Default, "reset"); }, () => HasImage);
         RotateLeftCommand = new RelayCommand(() => ChangeSettings(Settings with { RotationQuarterTurns = (Settings.RotationQuarterTurns + 3) % 4, Crop = null }, "rotate"), () => HasImage);
         RotateRightCommand = new RelayCommand(() => ChangeSettings(Settings with { RotationQuarterTurns = (Settings.RotationQuarterTurns + 1) % 4, Crop = null }, "rotate"), () => HasImage);
         FlipCommand = new RelayCommand(() => ChangeSettings(Settings with { FlipHorizontal = !Settings.FlipHorizontal, Crop = null }, "flip"), () => HasImage);
-        CropCommand = new RelayCommand(() => { CropMode = !CropMode; ShowBefore = false; }, () => HasImage && !IsLoading);
+        CropCommand = new RelayCommand(() => { SelectedToolTab = SelectedToolTab == 1 ? 0 : 1; ShowBefore = false; }, () => HasImage && !IsLoading);
         ClearCropCommand = new RelayCommand(() => ChangeSettings(Settings with { Crop = null }, "crop"), () => HasImage);
         CompareCommand = new RelayCommand(() => ShowBefore = !ShowBefore, () => HasImage);
-        CancelCommand = new RelayCommand(() => { _loadCancellation?.Cancel(); _exportCancellation?.Cancel(); Status = "已请求取消，正在结束当前步骤…"; }, () => IsLoading || IsExporting);
+        CancelCommand = new RelayCommand(() => { _loadCancellation?.Cancel(); _exportCancellation?.Cancel(); _detailCancellation?.Cancel(); Status = "已请求取消，正在结束当前步骤…"; }, () => IsLoading || IsExporting || IsDetailLoading);
         NaturalCommand = new RelayCommand(() => ApplyPreset(0), () => HasImage);
         FilmCommand = new RelayCommand(() => ApplyPreset(1), () => HasImage);
         MonoCommand = new RelayCommand(() => ApplyPreset(2), () => HasImage);
@@ -112,7 +118,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         get => _selectedPhoto;
         set
         {
-            if (_disposed || value is null) return;
+            if (_disposed) return;
+            if (value is null) { if (SetProperty(ref _selectedPhoto, value)) ClearCurrentPhoto(); return; }
             if (SetProperty(ref _selectedPhoto, value) || (!HasImage && !IsLoading)) _ = LoadPhotoAsync(value);
         }
     }
@@ -126,9 +133,9 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     public int[] Histogram { get => _histogram; private set => SetProperty(ref _histogram, value); }
     public bool IsLoading { get => _isLoading; private set { if (SetProperty(ref _isLoading, value)) CommandManager.InvalidateRequerySuggested(); } }
     public bool IsExporting { get => _isExporting; private set { if (SetProperty(ref _isExporting, value)) CommandManager.InvalidateRequerySuggested(); } }
-    public bool ShowBefore { get => _showBefore; set { if (SetProperty(ref _showBefore, value)) { OnPropertyChanged(nameof(CompareLabel)); ScheduleRender(); } } }
+    public bool ShowBefore { get => _showBefore; set { if (SetProperty(ref _showBefore, value)) { OnPropertyChanged(nameof(CompareLabel)); ComparisonMode = value ? 1 : 0; } } }
     public string CompareLabel => ShowBefore ? "原图 · 点击返回" : "对比原图  B";
-    public bool CropMode { get => _cropMode; set { if (SetProperty(ref _cropMode, value)) ScheduleRender(); } }
+    public bool CropMode { get => _cropMode; set { if (SetProperty(ref _cropMode, value)) { NotifyGeometry(); ScheduleRender(); } } }
 
     public double Exposure { get => Settings.Exposure; set => ChangeSettings(Settings with { Exposure = value }); }
     public double Temperature { get => Settings.Temperature; set => ChangeSettings(Settings with { Temperature = value }); }
@@ -154,7 +161,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             if (!File.Exists(path) || !IsSupported(path)) continue;
             var full = Path.GetFullPath(path);
             var item = Photos.FirstOrDefault(photo => photo.Path.Equals(full, StringComparison.OrdinalIgnoreCase));
-            if (item is null) { item = new PhotoItem(full); Photos.Add(item); }
+            if (item is null) { item = new PhotoItem(full) { Rating = _ratings.GetRating(full) }; Photos.Add(item); }
             first ??= item;
         }
         OnPropertyChanged(nameof(PhotoCount));
@@ -184,15 +191,22 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     {
         _loadVersion++;
         _loadCancellation?.Cancel();
+        _detailCancellation?.Cancel();
         _renderCancellation?.Cancel();
         var cancellation = new CancellationTokenSource();
         _loadCancellation = cancellation;
         var token = cancellation.Token;
         _source = null;
+        NotifyGeometry();
+        _denoiseSource = null;
+        _denoisedPixels = null;
         Preview = null;
         _undo.Clear(); _redo.Clear();
         _lastEditProperty = null;
-        CropMode = false;
+        BeforePreview = null;
+        ClearFilterSelection();
+        _beforeSource = null;
+        OnPropertyChanged(nameof(IsFullResolution));
         Error = "";
         IsLoading = true;
         OnPropertyChanged(nameof(FileName)); OnPropertyChanged(nameof(HasImage)); OnPropertyChanged(nameof(Empty));
@@ -249,13 +263,15 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             }
             token.ThrowIfCancellationRequested();
             _source = source;
+            NotifyGeometry();
+            OnPropertyChanged(nameof(IsFullResolution));
             item.OriginalWidth = source.OriginalWidth;
             item.OriginalHeight = source.OriginalHeight;
             ImageInfo = $"{source.OriginalWidth:N0} × {source.OriginalHeight:N0}   ·   {camera}   ·   {item.Kind}";
             OnPropertyChanged(nameof(HasImage)); OnPropertyChanged(nameof(Empty));
             var thumbnail = await Task.Run(() => CreateThumbnail(source), token);
             token.ThrowIfCancellationRequested();
-            item.Thumbnail = thumbnail;
+            CacheThumbnail(item, thumbnail);
             ShowBefore = false;
             await RenderAsync(0);
             token.ThrowIfCancellationRequested();
@@ -300,7 +316,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             if (recipe.LutPath != _recipe.LutPath) _lut = recipe.LutPath is null ? null : _lutCache[recipe.LutPath];
             _recipe = recipe;
             if (SelectedPhoto is not null) _sessions[SelectedPhoto.Path] = recipe;
-            _showBefore = false; OnPropertyChanged(nameof(ShowBefore)); OnPropertyChanged(nameof(CompareLabel));
+            ShowBefore = false;
             NotifySettings();
             ScheduleRender();
             CommandManager.InvalidateRequerySuggested();
@@ -310,12 +326,14 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
     private void NotifySettings()
     {
+        NotifyWorkspaceSettings();
         foreach (var name in new[] { nameof(Exposure), nameof(Temperature), nameof(Tint), nameof(Contrast), nameof(Highlights), nameof(Shadows), nameof(Saturation), nameof(Hue), nameof(Denoise), nameof(CurveShadows), nameof(CurveMidtones), nameof(CurveHighlights), nameof(Straighten), nameof(LutStrength), nameof(FilterName), nameof(Settings) }) OnPropertyChanged(name);
     }
 
     private void Undo()
     {
         if (_undo.Count == 0) return;
+        ClearFilterSelection();
         _redo.Add(_recipe);
         var recipe = _undo[^1]; _undo.RemoveAt(_undo.Count - 1);
         _lastEditProperty = null; ApplyRecipe(recipe);
@@ -324,6 +342,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     private void Redo()
     {
         if (_redo.Count == 0) return;
+        ClearFilterSelection();
         _undo.Add(_recipe);
         var recipe = _redo[^1]; _redo.RemoveAt(_redo.Count - 1);
         _lastEditProperty = null; ApplyRecipe(recipe);
@@ -331,7 +350,6 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
     public void ApplyCrop(NormalizedRect crop)
     {
-        CropMode = false;
         ChangeSettings(Settings with { Crop = crop }, "crop");
     }
 
@@ -356,29 +374,48 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         var token = cancellation.Token;
         var source = _source;
         if (source is null) { if (_renderCancellation == cancellation) _renderCancellation = null; cancellation.Dispose(); return; }
-        var settings = ShowBefore ? new EditSettings() : Settings;
+        var settings = Settings;
         if (CropMode) settings = settings with { Crop = null };
-        var lut = ShowBefore ? null : _lut;
+        var lut = _lut;
+        var beforeSettings = new EditSettings { Crop = settings.Crop, RotationQuarterTurns = settings.RotationQuarterTurns, FlipHorizontal = settings.FlipHorizontal, Straighten = settings.Straighten };
+        var cachedBefore = ReferenceEquals(_beforeSource, source) && _beforeSettings == beforeSettings ? BeforePreview : null;
         var strength = _recipe.LutStrength;
+        var denoiseKey = (settings.Denoise, settings.LuminanceDenoise, settings.ColorDenoise, settings.DenoiseDetail);
+        bool needsDenoise = settings.Denoise > 0 || settings.LuminanceDenoise > 0 || settings.ColorDenoise > 0;
+        var cachedDenoised = ReferenceEquals(_denoiseSource, source) && _denoiseKey == denoiseKey ? _denoisedPixels : null;
         try
         {
             if (delay > 0) await Task.Delay(delay, token);
             await _renderGate.WaitAsync(token);
-            (RenderedImage Image, BitmapSource Bitmap) result;
+            (RenderedImage Image, BitmapSource Bitmap, BitmapSource Before, byte[]? Denoised) result;
             var stopwatch = Stopwatch.StartNew();
             try
             {
                 result = await Task.Run(() =>
                 {
-                    var rendered = ImageProcessor.Render(source.Pixels, source.Width, source.Height, settings, lut, strength, token);
+                    var denoised = needsDenoise ? cachedDenoised ?? NoiseReducer.Reduce(source.Pixels, source.Width, source.Height, settings, token) : null;
+                    var colorSettings = settings with { Denoise = 0, LuminanceDenoise = 0, ColorDenoise = 0 };
+                    var rendered = ImageProcessor.Render(denoised ?? source.Pixels, source.Width, source.Height, colorSettings, lut, strength, token);
                     token.ThrowIfCancellationRequested();
-                    return (rendered, CreateBitmap(rendered.Width, rendered.Height, rendered.Pixels));
+                    var original = cachedBefore;
+                    if (original is null)
+                    {
+                        var unedited = ImageProcessor.Render(source.Pixels, source.Width, source.Height, beforeSettings, cancellationToken: token);
+                        original = CreateBitmap(unedited.Width, unedited.Height, unedited.Pixels);
+                    }
+                    return (rendered, CreateBitmap(rendered.Width, rendered.Height, rendered.Pixels), original, denoised);
                 }, token);
             }
             finally { _renderGate.Release(); }
             token.ThrowIfCancellationRequested();
             if (_disposed) return;
             Preview = result.Bitmap;
+            BeforePreview = result.Before;
+            _beforeSource = source;
+            _beforeSettings = beforeSettings;
+            _denoiseSource = result.Denoised is null ? null : source;
+            _denoiseKey = denoiseKey;
+            _denoisedPixels = result.Denoised;
             Histogram = result.Image.Histogram;
             RenderInfo = $"{stopwatch.Elapsed.TotalMilliseconds:F0} ms   ·   {result.Image.Width} × {result.Image.Height} 预览";
         }
@@ -403,14 +440,25 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     {
         var dialog = new OpenFileDialog { Title = "导入 3D LUT", Filter = "Cube 滤镜|*.cube" };
         if (dialog.ShowDialog() != true) return;
+        ClearFilterSelection();
+        var filterVersion = _filterVersion;
         var owner = SelectedPhoto;
         var loadVersion = _loadVersion;
         var lut = await LoadLutAsync(dialog.FileName, CancellationToken.None, refresh: true);
-        if (SelectedPhoto != owner || loadVersion != _loadVersion || _disposed || IsLoading) return;
+        if (SelectedPhoto != owner || loadVersion != _loadVersion || filterVersion != _filterVersion || _disposed || IsLoading) return;
         _undo.Add(_recipe); _redo.Clear();
         _lastEditProperty = null;
         _lut = lut;
         _recipe = _recipe with { LutPath = Path.GetFullPath(dialog.FileName) };
+        var imported = new FilterPreset
+        {
+            Id = Path.GetFullPath(dialog.FileName), Name = Path.GetFileNameWithoutExtension(dialog.FileName),
+            Category = "已导入", Kind = FilterPresetKind.Cube, OriginalPath = dialog.FileName, LutPath = dialog.FileName,
+            Notes = "用户导入的 sRGB 3D LUT"
+        };
+        if (Filters.All(filter => filter.Id != imported.Id)) Filters.Add(imported);
+        _selectedFilter = imported;
+        OnPropertyChanged(nameof(SelectedFilter));
         if (SelectedPhoto is not null) _sessions[SelectedPhoto.Path] = _recipe;
         NotifySettings(); ScheduleRender();
         Status = $"已导入滤镜 · {FilterName}";
@@ -427,7 +475,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
     private static BitmapSource CreateThumbnail(DecodedImage source)
     {
-        var scale = Math.Min(1, 160d / Math.Max(source.Width, source.Height));
+        var scale = Math.Min(1, 240d / Math.Max(source.Width, source.Height));
         var width = Math.Max(1, (int)(source.Width * scale));
         var height = Math.Max(1, (int)(source.Height * scale));
         var pixels = new byte[width * height * 4];
@@ -456,14 +504,10 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         var sourcePath = SelectedPhoto.Path;
         var recipe = _recipe;
         var lut = _lut;
-        var dialog = new SaveFileDialog
-        {
-            Title = "导出原尺寸照片", Filter = "JPEG 照片|*.jpg|PNG 无损图像|*.png|TIFF 图像（8 位）|*.tif",
-            FileName = Path.GetFileNameWithoutExtension(sourcePath) + "-edited.jpg", AddExtension = true,
-            InitialDirectory = Path.GetDirectoryName(sourcePath)
-        };
+        var geometry = ImageGeometry.Create(SelectedPhoto.OriginalWidth, SelectedPhoto.OriginalHeight, recipe.Settings);
+        var dialog = new Views.ExportWindow(geometry.OutputWidth, geometry.OutputHeight, sourcePath) { Owner = System.Windows.Application.Current?.MainWindow };
         if (dialog.ShowDialog() != true) return;
-        var destination = Path.GetFullPath(dialog.FileName);
+        var destination = Path.GetFullPath(dialog.DestinationPath);
         if (Photos.Any(photo => string.Equals(photo.Path, destination, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("请使用新的文件名，原始照片不可被覆盖。");
         using var cancellation = new CancellationTokenSource();
         _exportCancellation = cancellation;
@@ -475,7 +519,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             var full = await _files.LoadFullAsync(sourcePath, cancellation.Token);
             Status = "正在应用调整并导出…";
             var rendered = await Task.Run(() => ImageProcessor.Render(full.Pixels, full.Width, full.Height, recipe.Settings, lut, recipe.LutStrength, cancellation.Token), cancellation.Token);
-            await _files.ExportAsync(destination, rendered.Width, rendered.Height, rendered.Pixels, 95, cancellation.Token);
+            await _files.ExportAsync(destination, rendered.Width, rendered.Height, rendered.Pixels, dialog.Options, cancellation.Token);
             Status = $"导出完成 · {rendered.Width} × {rendered.Height} · {stopwatch.Elapsed.TotalSeconds:F2} s · {destination}";
         }
         catch (OperationCanceledException) { Status = "导出已取消"; }
@@ -488,6 +532,9 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     {
         _disposed = true;
         _loadCancellation?.Cancel(); _renderCancellation?.Cancel(); _exportCancellation?.Cancel();
+        _detailCancellation?.Cancel();
+        _thumbnailCancellation.Cancel();
         _cache.Clear();
+        _denoisedPixels = null; _denoiseSource = null; _beforeSource = null;
     }
 }

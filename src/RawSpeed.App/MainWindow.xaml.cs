@@ -1,10 +1,13 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using RawSpeed.App.Controls;
+using RawSpeed.App.Models;
+using RawSpeed.App.Services;
 using RawSpeed.App.ViewModels;
-using RawSpeed.Core;
+using RawSpeed.App.Views;
 using RawSpeed.Metadata;
 
 namespace RawSpeed.App;
@@ -12,132 +15,107 @@ namespace RawSpeed.App;
 public partial class MainWindow : Window
 {
     private readonly EditorViewModel _viewModel = new();
-    private bool _fit = true;
-    private Point? _cropStart;
-    private Rect _cropRect;
+    private readonly PreferencesStore _preferencesStore = new();
+    private EditorPreferences _preferences;
+    private ShortcutService _shortcuts;
 
     public MainWindow()
     {
         InitializeComponent();
+        _preferences = _preferencesStore.Load();
+        _shortcuts = new ShortcutService(_preferences);
         DataContext = _viewModel;
+        LibraryColumn.Width = new GridLength(_preferences.LibraryWidth);
+        ToolsColumn.Width = new GridLength(_preferences.ToolsWidth);
+        HistogramRow.Height = new GridLength(_preferences.HistogramHeight);
+        _viewModel.ThumbnailSize = _preferences.ThumbnailSize;
+        Viewport.CropCommitted += _viewModel.ApplyCrop;
+        Viewport.GrayPicked += _viewModel.SampleGray;
+        Viewport.WheelGesture += OnWheelGesture;
+        Viewport.ZoomChanged += (_, _) => UpdateZoomLabel();
+        Viewport.SizeChanged += (_, _) => UpdateZoomLabel();
         _viewModel.PropertyChanged += ViewModelChanged;
         Loaded += (_, _) =>
         {
-            var paths = Environment.GetCommandLineArgs().Skip(1).Where(EditorViewModel.IsSupported);
-            if (paths.Any()) _viewModel.AddFiles(paths);
-            UpdateImageSize();
+            var paths = Environment.GetCommandLineArgs().Skip(1).Where(EditorViewModel.IsSupported).ToArray();
+            if (paths.Length > 0) _viewModel.AddFiles(paths);
+            Viewport.Focus();
         };
     }
 
     private void ViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(EditorViewModel.Preview))
-        {
-            UpdateImageSize();
-            _cropRect = Rect.Empty; _cropStart = null;
-            CropCanvas.ReleaseMouseCapture(); UpdateCropOverlay();
-        }
-        if (e.PropertyName == nameof(EditorViewModel.CropMode) && _viewModel.CropMode)
-        {
-            _fit = true; UpdateImageSize();
-            _cropRect = Rect.Empty; UpdateCropOverlay();
-        }
+        if (e.PropertyName == nameof(EditorViewModel.SelectedPhoto)) Viewport.Fit();
+        if (e.PropertyName is nameof(EditorViewModel.Preview) or nameof(EditorViewModel.ComparisonMode) or nameof(EditorViewModel.LogicalWidth) or nameof(EditorViewModel.CropMode))
+            Dispatcher.BeginInvoke(new Action(UpdateZoomLabel), System.Windows.Threading.DispatcherPriority.Loaded);
     }
-
-    private void UpdateImageSize()
+    private void UpdateZoomLabel()
     {
-        if (_viewModel.Preview is not { } image) return;
-        if (_fit)
-        {
-            var scale = Math.Min(Math.Max(1, Viewport.ActualWidth - 24) / image.PixelWidth, Math.Max(1, Viewport.ActualHeight - 24) / image.PixelHeight);
-            PhotoImage.Width = image.PixelWidth * scale;
-            PhotoImage.Height = image.PixelHeight * scale;
-        }
-        else { PhotoImage.Width = image.PixelWidth; PhotoImage.Height = image.PixelHeight; }
+        _ = Viewport.ImageBounds; // Resolve fit zoom using the current viewport dimensions.
+        if (!ZoomNumber.IsKeyboardFocused) ZoomNumber.Text = $"{Viewport.Zoom * 100:0.#}";
     }
-
-    private void ViewportSizeChanged(object sender, SizeChangedEventArgs e) { UpdateImageSize(); _cropRect = Rect.Empty; UpdateCropOverlay(); }
-    private void FitImage(object sender, RoutedEventArgs e) { _fit = true; UpdateImageSize(); }
-    private void ActualSize(object sender, RoutedEventArgs e) { _viewModel.CropMode = false; _fit = false; UpdateImageSize(); }
-    private void OnFilesDrop(object sender, DragEventArgs e)
+    private void ZoomNumberLostFocus(object sender, RoutedEventArgs e) => ApplyZoomNumber();
+    private void ZoomNumberKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
-        var files = new List<string>();
+        if (e.Key == Key.Enter) { ApplyZoomNumber(); e.Handled = true; }
+        if (e.Key == Key.Escape) { ZoomNumber.Text = $"{Viewport.Zoom * 100:0.#}"; e.Handled = true; }
+    }
+    private void ApplyZoomNumber()
+    {
+        if (double.TryParse(ZoomNumber.Text, out double percent) && double.IsFinite(percent) && percent is >= 1 and <= 1600)
+        {
+            Viewport.ZoomBy(percent / 100 / Viewport.Zoom);
+            RequestDetailIfNeeded();
+        }
+        ZoomNumber.Text = $"{Viewport.Zoom * 100:0.#}";
+    }
+    private async void PhotoCardLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ListBoxItem item) return;
+        item.DataContextChanged -= PhotoCardDataContextChanged;
+        item.DataContextChanged += PhotoCardDataContextChanged;
+        if (item.DataContext is PhotoItem photo) await _viewModel.EnsureThumbnailAsync(photo);
+    }
+    private async void PhotoCardDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is PhotoItem photo) await _viewModel.EnsureThumbnailAsync(photo);
+    }
+    private void FitImage(object sender, RoutedEventArgs e) => Viewport.Fit();
+    private async void ActualSize(object sender, RoutedEventArgs e)
+    {
+        Viewport.ActualSize();
+        await _viewModel.EnsureFullResolutionAsync();
+    }
+    private void ConfigureShortcuts(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ShortcutsWindow(_preferences) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
         try
         {
-            foreach (var path in paths)
-                if (System.IO.Directory.Exists(path)) files.AddRange(System.IO.Directory.EnumerateFiles(path).Where(EditorViewModel.IsSupported));
-                else files.Add(path);
-            _viewModel.AddFiles(files);
+            _preferences = dialog.Preferences;
+            _preferencesStore.Save(_preferences);
+            _shortcuts = new ShortcutService(_preferences);
         }
         catch (Exception ex) { _viewModel.ReportError(ex); }
     }
 
-    private Rect DisplayImageRect()
+    private void OnFilesDrop(object sender, DragEventArgs e)
     {
-        var origin = PhotoImage.TranslatePoint(new Point(0, 0), CropCanvas);
-        return new Rect(origin, new Size(PhotoImage.ActualWidth, PhotoImage.ActualHeight));
-    }
-
-    private void CropMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        var point = e.GetPosition(CropCanvas);
-        if (!DisplayImageRect().Contains(point)) return;
-        _cropStart = point; _cropRect = new Rect(point, point); CropCanvas.CaptureMouse(); e.Handled = true;
-    }
-
-    private void CropMouseMove(object sender, MouseEventArgs e)
-    {
-        if (_cropStart is not { } start) return;
-        var bounds = DisplayImageRect();
-        var point = e.GetPosition(CropCanvas);
-        point = new Point(Math.Clamp(point.X, bounds.Left, bounds.Right), Math.Clamp(point.Y, bounds.Top, bounds.Bottom));
-        _cropRect = new Rect(start, point); UpdateCropOverlay();
-    }
-
-    private void CropMouseUp(object sender, MouseButtonEventArgs e) { _cropStart = null; CropCanvas.ReleaseMouseCapture(); }
-
-    private void UpdateCropOverlay()
-    {
-        if (CropRectangle is null) return;
-        CropRectangle.Visibility = _cropRect.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
-        CropGrid.Visibility = CropRectangle.Visibility;
-        if (_cropRect.IsEmpty) return;
-        Canvas.SetLeft(CropRectangle, _cropRect.Left); Canvas.SetTop(CropRectangle, _cropRect.Top);
-        CropRectangle.Width = _cropRect.Width; CropRectangle.Height = _cropRect.Height;
-        var geometry = new GeometryGroup();
-        for (var i = 1; i <= 2; i++)
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
+        try
         {
-            var x = _cropRect.Left + _cropRect.Width * i / 3;
-            var y = _cropRect.Top + _cropRect.Height * i / 3;
-            geometry.Children.Add(new LineGeometry(new Point(x, _cropRect.Top), new Point(x, _cropRect.Bottom)));
-            geometry.Children.Add(new LineGeometry(new Point(_cropRect.Left, y), new Point(_cropRect.Right, y)));
+            var files = paths.SelectMany(path => System.IO.Directory.Exists(path)
+                ? System.IO.Directory.EnumerateFiles(path).Where(EditorViewModel.IsSupported) : [path]);
+            _viewModel.AddFiles(files);
         }
-        CropGrid.Data = geometry;
+        catch (Exception ex) { _viewModel.ReportError(ex); }
     }
-
-    private void ApplyCrop(object sender, RoutedEventArgs e)
-    {
-        var bounds = DisplayImageRect();
-        if (_cropRect.IsEmpty || _cropRect.Width < 8 || _cropRect.Height < 8 || bounds.Width == 0 || bounds.Height == 0) return;
-        _viewModel.ApplyCrop(new NormalizedRect((_cropRect.X - bounds.X) / bounds.Width, (_cropRect.Y - bounds.Y) / bounds.Height, _cropRect.Width / bounds.Width, _cropRect.Height / bounds.Height));
-    }
-
-    private void CancelCrop(object sender, RoutedEventArgs e) => _viewModel.CropMode = false;
-    private void CropSquare(object sender, RoutedEventArgs e) => ApplyAspectCrop(1);
-    private void CropThreeTwo(object sender, RoutedEventArgs e) => ApplyAspectCrop(1.5);
-    private void ApplyAspectCrop(double ratio)
-    {
-        if (_viewModel.Preview is null) return;
-        // Use the uncropped oriented canvas dimensions, not the previous cropped preview.
-        var turns = _viewModel.Settings.RotationQuarterTurns % 2;
-        var original = _viewModel.SelectedPhoto;
-        if (original is null || original.OriginalHeight == 0 || original.OriginalWidth == 0) return;
-        var aspect = turns == 0 ? original.OriginalWidth / (double)original.OriginalHeight : original.OriginalHeight / (double)original.OriginalWidth;
-        var w = Math.Min(1, ratio / aspect); var h = Math.Min(1, aspect / ratio);
-        _viewModel.ApplyCrop(new NormalizedRect((1 - w) / 2, (1 - h) / 2, w, h));
-    }
-
+    private void CropSquare(object sender, RoutedEventArgs e) => _viewModel.ApplyAspectCrop(1);
+    private void CropThreeTwo(object sender, RoutedEventArgs e) => _viewModel.ApplyAspectCrop(1.5);
+    private void CropWide(object sender, RoutedEventArgs e) => _viewModel.ApplyAspectCrop(16d / 9);
+    private void ResetCurves(object sender, RoutedEventArgs e) => _viewModel.ResetCurves();
+    private void ResetDenoise(object sender, RoutedEventArgs e) => _viewModel.ResetDenoise();
+    private void ResetComposition(object sender, RoutedEventArgs e) => _viewModel.ResetComposition();
     private void CopyMetadata(object sender, RoutedEventArgs e)
     {
         try { Clipboard.SetText(string.Join(Environment.NewLine, _viewModel.MetadataView.Cast<MetadataEntry>().Select(entry => $"[{entry.Group}] {entry.Name}: {entry.Value}"))); }
@@ -146,24 +124,79 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        var control = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-        ICommand? command = (control, e.Key) switch
+        // Never turn a digit typed into a numeric editor into a photo rating, or steal its undo/delete.
+        if (IsTextEntry(Keyboard.FocusedElement as DependencyObject) || Keyboard.FocusedElement is CurveCanvas) return;
+        if (e.Key == Key.Escape)
         {
-            (true, Key.O) => _viewModel.OpenCommand, (true, Key.E) => _viewModel.ExportCommand,
-            (true, Key.S) => _viewModel.SaveCommand, (true, Key.Z) => _viewModel.UndoCommand,
-            (true, Key.Y) => _viewModel.RedoCommand, _ => null
-        };
-        if (!control && Keyboard.FocusedElement is not TextBox)
-        {
-            command = e.Key switch { Key.B => _viewModel.CompareCommand, Key.C => _viewModel.CropCommand, _ => command };
-            if (e.Key == Key.Escape) { _viewModel.CropMode = false; _viewModel.ShowBefore = false; }
+            _viewModel.PickGray = false;
+            _viewModel.ComparisonMode = 0;
+            if (_viewModel.CropMode) _viewModel.SelectedToolTab = 0;
+            e.Handled = true;
+            return;
         }
-        if (command?.CanExecute(null) == true) { command.Execute(null); e.Handled = true; }
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (_shortcuts.MatchKey(key, Keyboard.Modifiers) is { } action) { ExecuteAction(action); e.Handled = true; }
     }
-
+    private static bool IsTextEntry(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is TextBox or PasswordBox or System.Windows.Controls.Primitives.TextBoxBase) return true;
+            element = element is Visual ? VisualTreeHelper.GetParent(element) : null;
+        }
+        return false;
+    }
+    private void OnWheelGesture(int delta, ModifierKeys modifiers, Point anchor)
+    {
+        if (_shortcuts.MatchWheel(delta, modifiers) is { } action) ExecuteAction(action, anchor);
+    }
+    private void ExecuteAction(EditorAction action, Point? anchor = null)
+    {
+        ICommand? command = action switch
+        {
+            EditorAction.Open => _viewModel.OpenCommand, EditorAction.Save => _viewModel.SaveCommand,
+            EditorAction.Export => _viewModel.ExportCommand, EditorAction.Undo => _viewModel.UndoCommand,
+            EditorAction.Redo => _viewModel.RedoCommand, EditorAction.ToggleBefore => _viewModel.CompareCommand,
+            EditorAction.Composition => _viewModel.CropCommand, _ => null
+        };
+        if (command is not null) { if (command.CanExecute(null)) command.Execute(null); return; }
+        switch (action)
+        {
+            case EditorAction.Fit: Viewport.Fit(); break;
+            case EditorAction.ActualSize: Viewport.ActualSize(); _ = _viewModel.EnsureFullResolutionAsync(); break;
+            case EditorAction.ZoomIn: Viewport.ZoomBy(1.2, anchor); RequestDetailIfNeeded(); break;
+            case EditorAction.ZoomOut: Viewport.ZoomBy(1 / 1.2, anchor); break;
+            case EditorAction.CycleComparison: _viewModel.ComparisonMode = (_viewModel.ComparisonMode + 1) % 4; break;
+            case EditorAction.Previous: _viewModel.NavigatePhoto(-1); break;
+            case EditorAction.Next: _viewModel.NavigatePhoto(1); break;
+            case EditorAction.Rating0: _viewModel.SetRating(0); break;
+            case EditorAction.Rating1: _viewModel.SetRating(1); break;
+            case EditorAction.Rating2: _viewModel.SetRating(2); break;
+            case EditorAction.Rating3: _viewModel.SetRating(3); break;
+            case EditorAction.Rating4: _viewModel.SetRating(4); break;
+            case EditorAction.Rating5: _viewModel.SetRating(5); break;
+        }
+    }
+    private void RequestDetailIfNeeded()
+    {
+        if (Viewport.Zoom >= 0.65) _ = _viewModel.EnsureFullResolutionAsync();
+    }
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (_viewModel.HasUnsavedChanges && MessageBox.Show(this, "尚有未保存的编辑配方。关闭后这些调整将丢失，是否关闭？", "RawSpeed", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) { e.Cancel = true; return; }
+        if (_viewModel.HasUnsavedChanges && MessageBox.Show(this, "尚有未保存的编辑配方。关闭后这些调整将丢失，是否关闭？", "RawSpeed", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+        {
+            e.Cancel = true;
+            return;
+        }
+        try
+        {
+            _preferences.LibraryWidth = LibraryColumn.ActualWidth;
+            _preferences.ToolsWidth = ToolsColumn.ActualWidth;
+            _preferences.HistogramHeight = HistogramRow.ActualHeight;
+            _preferences.ThumbnailSize = _viewModel.ThumbnailSize;
+            _preferencesStore.Save(_preferences);
+        }
+        catch (Exception ex) { _viewModel.ReportError(ex); }
         _viewModel.Dispose();
     }
 }
