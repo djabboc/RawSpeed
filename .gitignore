@@ -8,3 +8,4 @@ artifacts/
 *.user
 *.rawspeed.json
 *.tmp
+src/RawSpeed.App/Properties/launchSettings.json
