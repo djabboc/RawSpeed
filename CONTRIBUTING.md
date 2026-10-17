@@ -4,21 +4,29 @@
 
 ## 开发环境与运行
 
-使用 Windows 10/11 x64、.NET 9 SDK。Visual Studio 2022 可使用“.NET 桌面开发”工作负载；也可以使用 SDK 命令行。第一次构建需要访问 NuGet。
+使用 Windows 10/11 x64、.NET 9 SDK。完整的安装、命令行运行、Visual Studio 断点调试和故障处理见 [本地开发指南](docs/development.md)。第一次还原需要访问 NuGet；SDK 选择遵循 `global.json`。
 
 在仓库根目录执行：
 
 ```powershell
-dotnet restore RawSpeed.sln
-dotnet build RawSpeed.sln -c Release
-dotnet run --project src/RawSpeed.App -c Release
+dotnet restore RawSpeed.sln --locked-mode
+dotnet build RawSpeed.sln -c Debug --no-restore
+dotnet run --project src/RawSpeed.App -c Debug --no-build
 ```
 
 WPF 项目针对 `net9.0-windows`，应用进程为 x64。Core、Imaging、Metadata 为独立的 `net9.0` 项目；不要将 WPF 类型或文件对话框引入这些模块。
 
 ## 验证修改
 
-当前测试是可执行控制台程序，使用以下命令运行；仅执行 `dotnet test` 不会运行这些检查：
+当前测试是可执行控制台程序；仅执行 `dotnet test` 不会运行这些检查。完整的常规验证使用以下脚本，涵盖 Core、App、滤镜目录、导出与偏好以及 WPF 控件：
+
+```powershell
+./scripts/Test.ps1
+# 仅在备齐本地样片后执行
+./scripts/Test.ps1 -WithSamples
+```
+
+调试单个套件时也可直接运行相应项目：
 
 ```powershell
 dotnet run --project tests/RawSpeed.Core.Tests -c Release

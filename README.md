@@ -4,11 +4,12 @@
 
 ## 运行
 
-Windows 10/11 x64。开发需要 .NET 9 SDK；非独立发行包需要 .NET 9 Desktop Runtime。
+Windows 10/11 x64。开发需要 .NET 9 SDK（仓库使用 `global.json` 选择 SDK）；本地编译与调试见 [开发指南](docs/development.md)。在仓库根目录执行：
 
 ```powershell
-dotnet build RawSpeed.sln -c Release
-dotnet run --project src/RawSpeed.App -c Release
+dotnet restore RawSpeed.sln --locked-mode
+dotnet build RawSpeed.sln -c Debug --no-restore
+dotnet run --project src/RawSpeed.App -c Debug --no-build
 ```
 
 支持拖入文件或文件夹、命令行传入照片路径。首次显示相机内嵌预览，再替换为 LibRaw 真实显影结果；默认工作图最长边 1600 像素。点击 **100%** 或按 **D** 加载原尺寸细节。鼠标滚轮围绕指针缩放，拖动照片平移，**F** 适应窗口；缩放百分比也可直接输入。
@@ -49,9 +50,6 @@ dotnet run --project src/RawSpeed.App -c Release
 ./scripts/Test.ps1
 ./scripts/Test.ps1 -WithSamples
 ./scripts/Test.ps1 -Benchmark
-./scripts/Publish.ps1 -SelfContained
-# 本机完整样式包；社区资源不用于默认公开发布
-./scripts/Publish.ps1 -SelfContained -OutputDirectory artifacts/publish/RawSpeed-0.2-win-x64 -IncludeLocalPresets
 ```
 
 测试覆盖算法、WPF 会话/历史/取消、裁切交互几何、滤镜来源和缓存、星级持久化、导出和回读、快捷键、实际 WPF 控件布局及绑定。样张测试校验 JPG/NEF/ORF 原文件 SHA-256 不变。`example`、输出图像、构建缓存不进入 Git。CI 使用生成夹具，不依赖用户照片。
@@ -69,6 +67,6 @@ dotnet run --project src/RawSpeed.App -c Release
 
 ## 工程
 
-`Core` 为无第三方依赖的算法；`Imaging` 负责解码/编码；`Metadata` 负责元数据；`App` 负责 WPF/MVVM 和调度。参见 [架构](docs/architecture.md)、[竞品调研](docs/research.md)、[贡献指南](CONTRIBUTING.md)、[第三方声明](THIRD-PARTY-NOTICES.md)。
+`Core` 为无第三方依赖的算法；`Imaging` 负责解码/编码；`Metadata` 负责元数据；`App` 负责 WPF/MVVM 和调度。参见 [开发指南](docs/development.md)、[架构](docs/architecture.md)、[竞品调研](docs/research.md)、[贡献指南](CONTRIBUTING.md)、[第三方声明](THIRD-PARTY-NOTICES.md)。
 
-本地 Git 已初始化并按模块提交，未推送到 GitHub。保留原资源许可和来源；项目自身开源许可证由所有者在公开发布前选定。
+源码仓库：[djabboc/RawSpeed](https://github.com/djabboc/RawSpeed)。目前仅维护源码，不提供 GitHub Release；本地开发无需打包。保留原资源许可和来源；项目自身许可证尚未选定，公开源码不自动授予额外使用或再分发许可。
