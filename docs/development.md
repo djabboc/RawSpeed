@@ -113,4 +113,4 @@ dotnet run --project tests/RawSpeed.Core.Tests -c Debug
 ./scripts/Publish.ps1 -SelfContained
 ```
 
-默认输出到 `artifacts/publish/win-x64/`。省略 `-SelfContained` 时，目标电脑需安装 .NET 9 Desktop Runtime。脚本保留第三方声明；本地社区预设没有声明可再分发许可证，默认排除。`-IncludeLocalPresets` 仅用于自行准备的本机资源验证，不表示获得对外分发授权。当前源码上传范围和第三方许可要求见 [贡献指南](../CONTRIBUTING.md) 与 [第三方声明](../THIRD-PARTY-NOTICES.md)。
+默认输出到 `artifacts/publish/win-x64/`；自定义 `-OutputDirectory` 必须是仓库内 `artifacts/publish/` 的子目录。脚本在新的临时目录完成打包后替换目标；已有输出保留为同级的 `<目标目录名>.previous-<GUID>`，失败时保留原有输出。省略 `-SelfContained` 时，目标电脑需安装 .NET 9 Desktop Runtime。脚本保留第三方声明；本地社区预设没有声明可再分发许可证，默认排除。`-IncludeLocalPresets` 仅用于自行准备的本机资源验证，不表示获得对外分发授权。当前源码上传范围和第三方许可要求见 [贡献指南](../CONTRIBUTING.md) 与 [第三方声明](../THIRD-PARTY-NOTICES.md)。

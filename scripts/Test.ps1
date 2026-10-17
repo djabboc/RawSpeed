@@ -2,6 +2,7 @@ param([switch]$WithSamples, [switch]$Benchmark)
 $ErrorActionPreference = 'Stop'
 Push-Location (Join-Path $PSScriptRoot '..')
 try {
+    & (Join-Path $PSScriptRoot 'Test-Publish.ps1')
     dotnet build RawSpeed.sln -c Release -warnaserror
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
     $arguments = @('run', '--project', 'tests/RawSpeed.Core.Tests', '-c', 'Release', '--no-build')
