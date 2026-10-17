@@ -13,7 +13,7 @@ using System.Windows;
 
 namespace RawSpeed.App.Tests;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly string TestDirectory = Path.Combine(Path.GetTempPath(), "rawspeed-app-tests-" + Guid.NewGuid().ToString("N"));
     private static int _failures;
@@ -49,7 +49,12 @@ internal static class Program
             ("First slider edit on a new photo retains an undo entry", HistoryAcrossPhotosAsync),
             ("Crop, rotation, original comparison and reset render consistently", GeometryAsync),
             ("Rapid edits publish the final value and freeze WPF bitmaps", LatestRenderAsync),
-            ("Missing LUT fallback can be saved without leaving dirty state", MissingLutAsync),
+            ("Unavailable LUTs retain saved intent until explicitly cleared", MissingLutAsync),
+            ("Film and community recipes survive cache deletion and installation relocation", PersistentPresetCachesAsync),
+            ("Version 1 paths migrate and restore deleted generated caches", LegacyPresetRecipesAsync),
+            ("Missing or changed preset sources remain recoverable after save", UnavailablePresetSourcesAsync),
+            ("Clearing, undoing and resetting a saved preset preserves filter history", PresetHistoryAsync),
+            ("Catalog Cube recipes retain UTF-8 and UTF-16 BOM support", EncodedCubeRecipesAsync),
             ("Malformed image shows a recoverable error and next selection loads", FailedDecodeAsync),
             ("Thumbnail memory remains bounded independently of source dimensions", ThumbnailAsync),
             ("Cancelled loading can be retried by reopening the same photo", CancelAndRetryAsync),
@@ -215,12 +220,21 @@ internal static class Program
     {
         string source = CreateJpeg("missing-lut", 48, 32, 100, 120, 140);
         await RecipeStore.SaveAsync(source, EditRecipe.Default with { LutPath = Path.Combine(TestDirectory, "missing.cube") });
+        var saved = await RecipeStore.LoadAsync(source);
         using var editor = new EditorViewModel();
         editor.AddFiles([source]); await ReadyAsync(editor, allowError: true);
-        True(editor.HasError, "Missing LUT should produce an actionable message.");
+        True(editor.HasError && editor.HasLut && !editor.ExportCommand.CanExecute(null), "Missing LUT should stay visible and prevent an incomplete export.");
+        True(!editor.HasUnsavedChanges, "A missing source must not silently edit the saved recipe.");
         await SaveAsync(editor, source);
-        True((await RecipeStore.LoadAsync(source))?.LutPath is null, "Missing-LUT fallback should save the effective recipe.");
-        True(!editor.HasUnsavedChanges, "Saving a missing-LUT fallback left a stale session dirty.");
+        True(await RecipeStore.LoadAsync(source) == saved, "Saving must retain the unavailable LUT path.");
+        editor.ClearLutCommand.Execute(null);
+        True(!editor.HasLut && editor.ExportCommand.CanExecute(null), "Explicit removal should allow export.");
+        editor.UndoCommand.Execute(null);
+        True(editor.HasLut && !editor.ExportCommand.CanExecute(null), "Undo should restore the unavailable filter without a cache lookup error.");
+        editor.RedoCommand.Execute(null);
+        await SaveAsync(editor, source);
+        True((await RecipeStore.LoadAsync(source))?.LutPath is null && !editor.HasUnsavedChanges,
+            "Explicit clear/save should remove the LUT and clear dirty state.");
     }
 
     private static async Task FailedDecodeAsync()

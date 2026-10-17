@@ -93,6 +93,105 @@ public sealed class LutCatalogService
         return path is null ? null : CubeLut.Load(path);
     }
 
+    /// <summary>Captures the identity of the same source bytes used to produce the LUT.</summary>
+    public (CubeLut Lut, LutSourceReference Source) PrepareLut(FilterPreset preset, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        byte[] source = ReadSource(preset);
+        string hash = SourceHash(source);
+        var reference = new LutSourceReference(preset.Id, preset.Name, preset.Kind,
+            Path.GetFullPath(preset.OriginalPath!), hash, preset.Kind == FilterPresetKind.Cube ? null : AdapterVersion);
+        return (LoadSource(preset, source, hash, cancellationToken), reference);
+    }
+
+    /// <summary>Finds the same source in the current installation or its saved location and rebuilds disposable caches.</summary>
+    public CubeLut RestoreLut(LutSourceReference reference, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (reference.Kind != FilterPresetKind.Cube && reference.AdapterVersion != AdapterVersion)
+            throw new InvalidDataException($"滤镜适配版本 {reference.AdapterVersion} 当前不可用，请恢复相同版本或重新选择滤镜。");
+        FilterPreset? catalogPreset;
+        lock (_cacheGate) catalogPreset = Scan().FirstOrDefault(p => p.Id == reference.Id && p.Kind == reference.Kind);
+        var savedPreset = new FilterPreset
+        {
+            Id = reference.Id, Name = reference.Name, Category = "已保存", Kind = reference.Kind,
+            OriginalPath = reference.OriginalPath,
+            Creator = reference.Kind == FilterPresetKind.RapidRawFilm ? "Andrea Volpato · spektrafilm" : "",
+            License = reference.Kind == FilterPresetKind.RapidRawFilm ? "CC BY-SA 4.0" : "上游未提供独立许可 · 仅本地下载",
+            SourceUrl = reference.Kind == FilterPresetKind.RapidRawFilm
+                ? $"https://github.com/CyberTimon/RapidRAW/tree/{RapidRawCommit}/src-tauri/resources/film_luts"
+                : $"https://github.com/CyberTimon/RapidRAW-Presets/tree/{CommunityCommit}/presets"
+        };
+        // Prefer the relocated installation; the old source may still be useful for imported/local presets.
+        var candidates = catalogPreset is null ? new[] { savedPreset } : new[] { catalogPreset, savedPreset };
+        bool sourceChanged = false;
+        foreach (var preset in candidates.DistinctBy(p => p.OriginalPath, StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!File.Exists(preset.OriginalPath)) continue;
+            byte[] source = ReadSource(preset);
+            string hash = SourceHash(source);
+            if (!hash.Equals(reference.SourceSha256, StringComparison.OrdinalIgnoreCase)) { sourceChanged = true; continue; }
+            return LoadSource(preset, source, hash, cancellationToken);
+        }
+        throw new FileNotFoundException(sourceChanged
+            ? $"{reference.Name} 的原始预设已改变。请恢复 SHA-256 为 {reference.SourceSha256} 的原文件，或重新选择滤镜。"
+            : $"找不到 {reference.Name} 的原始预设。请恢复原文件或重新安装该预设。", reference.OriginalPath);
+    }
+
+    /// <summary>Recovers v1 generated-cache paths using their kind, adapter version and source hash.</summary>
+    public (CubeLut Lut, LutSourceReference Source)? TryRestoreLegacyLut(string path, CancellationToken cancellationToken = default)
+    {
+        string name = Path.GetFileNameWithoutExtension(path);
+        foreach (var kind in new[] { FilterPresetKind.RapidRawFilm, FilterPresetKind.RapidRawCommunity })
+        {
+            string prefix = $"{AdapterVersion}-{kind}-";
+            if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            string hash = name[prefix.Length..];
+            if (hash.Length != 64 || !hash.All(Uri.IsHexDigit)) return null;
+            IReadOnlyList<FilterPreset> catalog;
+            lock (_cacheGate) catalog = Scan();
+            foreach (var preset in catalog.Where(p => p.Kind == kind))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] source = ReadSource(preset);
+                if (!SourceHash(source).Equals(hash, StringComparison.OrdinalIgnoreCase)) continue;
+                var reference = new LutSourceReference(preset.Id, preset.Name, kind,
+                    Path.GetFullPath(preset.OriginalPath!), hash.ToLowerInvariant(), AdapterVersion);
+                return (LoadSource(preset, source, hash.ToLowerInvariant(), cancellationToken), reference);
+            }
+        }
+        return null;
+    }
+
+    private CubeLut LoadSource(FilterPreset preset, byte[] source, string hash, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return preset.Kind == FilterPresetKind.Cube
+            ? ParseCube(source)
+            : CubeLut.Load(GetAdaptedPath(preset, source, hash, cancellationToken));
+    }
+
+    private static CubeLut ParseCube(byte[] source)
+    {
+        using var stream = new MemoryStream(source, writable: false);
+        using var reader = new StreamReader(stream);
+        return CubeLut.Parse(reader);
+    }
+
+    private static byte[] ReadSource(FilterPreset preset)
+    {
+        string original = preset.OriginalPath ?? throw new InvalidOperationException("The preset has no original file.");
+        using var stream = File.OpenRead(original);
+        long limit = (preset.Kind == FilterPresetKind.Cube ? 128L : 8L) * 1024 * 1024;
+        if (stream.Length > limit) throw new FormatException($"Preset exceeds the {limit / (1024 * 1024)} MiB file limit.");
+        byte[] source = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(source);
+        return source;
+    }
+
+    private static string SourceHash(byte[] source) => Convert.ToHexString(SHA256.HashData(source)).ToLowerInvariant();
+
     /// <summary>Returns an existing portable/imported path or a content-addressed, atomically written cache path.</summary>
     public string? GetLutPath(FilterPreset preset, CancellationToken cancellationToken = default)
     {
@@ -101,11 +200,13 @@ public sealed class LutCatalogService
         if (preset.Kind == FilterPresetKind.BuiltIn) return null;
         string original = preset.OriginalPath ?? throw new InvalidOperationException("The preset has no original file.");
         if (preset.Kind == FilterPresetKind.Cube) return original;
-        // Read once: a file modified during generation cannot be cached under the previous file's hash.
-        var info = new FileInfo(original);
-        if (info.Length > 8 * 1024 * 1024) throw new FormatException("Preset files must be smaller than 8 MiB.");
-        byte[] source = File.ReadAllBytes(original);
-        string hash = Convert.ToHexString(SHA256.HashData(source)).ToLowerInvariant();
+        byte[] source = ReadSource(preset);
+        return GetAdaptedPath(preset, source, SourceHash(source), cancellationToken);
+    }
+
+    private string GetAdaptedPath(FilterPreset preset, byte[] source, string hash, CancellationToken cancellationToken)
+    {
+        string original = preset.OriginalPath!;
         string key = $"{AdapterVersion}-{preset.Kind}-{hash}";
         string cachePath = Path.Combine(_cacheDirectory, key + ".cube");
         lock (_cacheGate)
@@ -120,7 +221,7 @@ public sealed class LutCatalogService
             Func<Vector3, Vector3> transform;
             if (preset.Kind == FilterPresetKind.RapidRawFilm)
             {
-                var lut = CubeLut.Parse(new StringReader(Encoding.UTF8.GetString(source)));
+                var lut = ParseCube(source);
                 transform = rgb => lut.Transform(ToVLog(ToLinear(rgb.X)), ToVLog(ToLinear(rgb.Y)), ToVLog(ToLinear(rgb.Z)));
             }
             else if (preset.Kind == FilterPresetKind.RapidRawCommunity)

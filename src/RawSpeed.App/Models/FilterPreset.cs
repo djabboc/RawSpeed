@@ -27,3 +27,7 @@ public enum FilterPresetKind
     RapidRawFilm,
     RapidRawCommunity
 }
+
+/// <summary>Persistent source identity; generated cache locations are never part of this reference.</summary>
+public sealed record LutSourceReference(string Id, string Name, FilterPresetKind Kind,
+    string OriginalPath, string SourceSha256, string? AdapterVersion);

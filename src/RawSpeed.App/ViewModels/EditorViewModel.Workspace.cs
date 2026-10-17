@@ -114,7 +114,7 @@ public sealed partial class EditorViewModel
         set { if (SetProperty(ref _selectedFilter, value) && value is not null) _ = ApplyFilterAsync(value); }
     }
     public string FilterSearch { get => _filterSearch; set { if (SetProperty(ref _filterSearch, value)) FiltersView.Refresh(); } }
-    public bool HasLut => _recipe.LutPath is not null;
+    public bool HasLut => _recipe.LutSource is not null || _recipe.LutPath is not null;
     private void ClearFilterSelection() { _filterVersion++; _selectedFilter = null; OnPropertyChanged(nameof(SelectedFilter)); }
 
     private void InitializeWorkspace()
@@ -228,11 +228,17 @@ public sealed partial class EditorViewModel
         try
         {
             if (preset.BuiltInKey is { } key) { ApplyPreset(key == "film" ? 1 : key == "mono" ? 2 : 0); return; }
-            string? path = await Task.Run(() => _catalog.GetLutPath(preset, _thumbnailCancellation.Token));
-            if (path is null) return;
-            await LoadLutAsync(path, _thumbnailCancellation.Token);
+            var prepared = await Task.Run(() => _catalog.PrepareLut(preset, _thumbnailCancellation.Token));
             if (_disposed || request != _filterVersion || ownerVersion != _loadVersion || IsLoading) return;
-            ChangeRecipe(_recipe with { LutPath = path }, "filter");
+            _referencedLuts[prepared.Source] = prepared.Lut;
+            if (_recipe.LutSource == prepared.Source)
+            {
+                // A source restored on disk may be selected again without changing saved intent.
+                _lut = prepared.Lut; Error = "";
+                NotifySettings(); ScheduleRender();
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+            }
+            else ChangeRecipe(_recipe with { LutPath = null, LutSource = prepared.Source }, "filter");
             Status = $"已应用 {preset.Name}";
         }
         catch (OperationCanceledException) { }

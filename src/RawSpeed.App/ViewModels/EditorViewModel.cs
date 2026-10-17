@@ -28,6 +28,7 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
     private readonly Dictionary<string, DecodedImage> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<string> _cacheOrder = new();
     private readonly Dictionary<string, CubeLut> _lutCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<LutSourceReference, CubeLut> _referencedLuts = [];
     private DecodedImage? _denoiseSource;
     private byte[]? _denoisedPixels;
     private (double Legacy, double Luminance, double Color, double Detail) _denoiseKey;
@@ -54,20 +55,20 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
     private DateTime _lastEdit;
     private string? _lastEditProperty;
 
-    public EditorViewModel(string? stateDirectory = null, string? presetsDirectory = null)
+    public EditorViewModel(string? stateDirectory = null, string? presetsDirectory = null, string? lutCacheDirectory = null)
     {
         _ratings = new RatingStore(stateDirectory);
-        _catalog = new LutCatalogService(presetsDirectory);
+        _catalog = new LutCatalogService(presetsDirectory, lutCacheDirectory);
         InitializeWorkspace();
         MetadataView = CollectionViewSource.GetDefaultView(MetadataEntries);
         MetadataView.Filter = value => value is MetadataEntry entry &&
             ($"{entry.Group} {entry.Name} {entry.Value}").Contains(MetadataSearch, StringComparison.OrdinalIgnoreCase);
         OpenCommand = new RelayCommand(OpenFiles);
         OpenFolderCommand = new RelayCommand(OpenFolder);
-        ExportCommand = new AsyncCommand(ChooseExportAsync, ReportError, () => HasImage && !IsLoading && !IsExporting);
+        ExportCommand = new AsyncCommand(ChooseExportAsync, ReportError, () => HasImage && !IsLoading && !IsExporting && (!HasLut || _lut is not null));
         SaveCommand = new AsyncCommand(SaveRecipeAsync, ReportError, () => HasImage && !IsLoading);
         ImportLutCommand = new AsyncCommand(ImportLutAsync, ReportError, () => HasImage);
-        ClearLutCommand = new RelayCommand(() => { ClearFilterSelection(); ChangeRecipe(_recipe with { LutPath = null }, "filter"); }, () => HasImage);
+        ClearLutCommand = new RelayCommand(() => { ClearFilterSelection(); ChangeRecipe(_recipe with { LutPath = null, LutSource = null }, "clear-filter"); }, () => HasImage);
         UndoCommand = new RelayCommand(Undo, () => _undo.Count > 0 && !IsLoading);
         RedoCommand = new RelayCommand(Redo, () => _redo.Count > 0 && !IsLoading);
         ResetCommand = new RelayCommand(() => { ClearFilterSelection(); ChangeRecipe(EditRecipe.Default, "reset"); }, () => HasImage);
@@ -111,7 +112,8 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
     public bool HasUnsavedChanges => _sessions.Any(pair => !_saved.TryGetValue(pair.Key, out var recipe) || pair.Value != recipe);
     public string PhotoCount => $"{Photos.Count:00} 张照片";
     public string FileName => SelectedPhoto?.Name ?? "未选择照片";
-    public string FilterName => _recipe.LutPath is null ? "无 LUT · 原始色彩" : Path.GetFileNameWithoutExtension(_recipe.LutPath);
+    public string FilterName => !HasLut ? "无 LUT · 原始色彩" :
+        (_recipe.LutSource?.Name ?? Path.GetFileNameWithoutExtension(_recipe.LutPath)) + (_lut is null ? "（暂不可用）" : "");
     public string MetadataCount => $"{MetadataEntries.Count} 项元数据 · 可搜索、复制";
     public PhotoItem? SelectedPhoto
     {
@@ -216,7 +218,8 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
         try
         {
             EditRecipe recipe;
-            if (!_sessions.TryGetValue(item.Path, out recipe!))
+            bool loadedFromDisk = !_sessions.TryGetValue(item.Path, out recipe!);
+            if (loadedFromDisk)
             {
                 try { recipe = await RecipeStore.LoadAsync(item.Path) ?? EditRecipe.Default; }
                 catch (Exception ex) { token.ThrowIfCancellationRequested(); Error = "配方未载入：" + ex.Message; recipe = EditRecipe.Default; }
@@ -225,14 +228,34 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
             }
             token.ThrowIfCancellationRequested();
             CubeLut? loadedLut = null;
-            try { loadedLut = recipe.LutPath is null ? null : await LoadLutAsync(recipe.LutPath, token); }
+            try
+            {
+                if (recipe.LutSource is { } reference)
+                {
+                    loadedLut = await Task.Run(() => _catalog.RestoreLut(reference, token), token);
+                    token.ThrowIfCancellationRequested();
+                    _referencedLuts[reference] = loadedLut;
+                }
+                else if (recipe.LutPath is { } path)
+                {
+                    var restored = await Task.Run(() => _catalog.TryRestoreLegacyLut(path, token), token);
+                    token.ThrowIfCancellationRequested();
+                    if (restored is { } result)
+                    {
+                        recipe = recipe with { LutPath = null, LutSource = result.Source };
+                        loadedLut = result.Lut;
+                        _referencedLuts[result.Source] = loadedLut;
+                    }
+                    else loadedLut = await LoadLutAsync(path, token);
+                }
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 token.ThrowIfCancellationRequested();
-                recipe = recipe with { LutPath = null };
-                Error = "滤镜未载入：" + ex.Message;
+                Error = "滤镜未载入，已保留配方中的滤镜信息；恢复原始预设或明确清除滤镜后可导出：" + ex.Message;
             }
             token.ThrowIfCancellationRequested();
+            if (loadedFromDisk) _saved[item.Path] = recipe;
             _recipe = recipe; _lut = loadedLut;
             _sessions[item.Path] = recipe;
             NotifySettings();
@@ -313,7 +336,13 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
     {
         try
         {
-            if (recipe.LutPath != _recipe.LutPath) _lut = recipe.LutPath is null ? null : _lutCache[recipe.LutPath];
+            if (recipe.LutSource != _recipe.LutSource || recipe.LutPath != _recipe.LutPath)
+            {
+                _lut = recipe.LutSource is { } reference ? _referencedLuts.GetValueOrDefault(reference)
+                    : recipe.LutPath is { } path ? _lutCache.GetValueOrDefault(path) : null;
+                Error = _lut is null && (recipe.LutSource is not null || recipe.LutPath is not null)
+                    ? "滤镜暂不可用，已保留配方中的滤镜信息；请恢复原始预设后重新打开照片，或明确清除滤镜。" : "";
+            }
             _recipe = recipe;
             if (SelectedPhoto is not null) _sessions[SelectedPhoto.Path] = recipe;
             ShowBefore = false;
@@ -361,7 +390,7 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
             2 => Settings with { Temperature = 0, Tint = 0, Saturation = -100, Contrast = 22, CurveShadows = -10, CurveMidtones = 5, CurveHighlights = 0 },
             _ => Settings with { Temperature = 0, Tint = 0, Contrast = 0, Saturation = 0, CurveShadows = 0, CurveMidtones = 0, CurveHighlights = 0 }
         };
-        ChangeRecipe(_recipe with { Settings = settings, LutPath = null }, "preset");
+        ChangeRecipe(_recipe with { Settings = settings, LutPath = null, LutSource = null }, "preset");
     }
 
     private void ScheduleRender() { if (!_disposed) _ = RenderAsync(45); }
@@ -449,7 +478,7 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
         _undo.Add(_recipe); _redo.Clear();
         _lastEditProperty = null;
         _lut = lut;
-        _recipe = _recipe with { LutPath = Path.GetFullPath(dialog.FileName) };
+        _recipe = _recipe with { LutPath = Path.GetFullPath(dialog.FileName), LutSource = null };
         var imported = new FilterPreset
         {
             Id = Path.GetFullPath(dialog.FileName), Name = Path.GetFileNameWithoutExtension(dialog.FileName),
