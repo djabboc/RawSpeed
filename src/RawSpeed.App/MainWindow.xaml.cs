@@ -35,11 +35,11 @@ public partial class MainWindow : Window
         Viewport.ZoomChanged += (_, _) => UpdateZoomLabel();
         Viewport.SizeChanged += (_, _) => UpdateZoomLabel();
         _viewModel.PropertyChanged += ViewModelChanged;
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
-            var paths = Environment.GetCommandLineArgs().Skip(1).Where(EditorViewModel.IsSupported).ToArray();
-            if (paths.Length > 0) _viewModel.AddFiles(paths);
             Viewport.Focus();
+            var paths = Environment.GetCommandLineArgs().Skip(1).ToArray();
+            if (paths.Length > 0) await _viewModel.AddFilesAsync(paths);
         };
     }
 
@@ -99,16 +99,10 @@ public partial class MainWindow : Window
         catch (Exception ex) { _viewModel.ReportError(ex); }
     }
 
-    private void OnFilesDrop(object sender, DragEventArgs e)
+    private async void OnFilesDrop(object sender, DragEventArgs e)
     {
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
-        try
-        {
-            var files = paths.SelectMany(path => System.IO.Directory.Exists(path)
-                ? System.IO.Directory.EnumerateFiles(path).Where(EditorViewModel.IsSupported) : [path]);
-            _viewModel.AddFiles(files);
-        }
-        catch (Exception ex) { _viewModel.ReportError(ex); }
+        await _viewModel.AddFilesAsync(paths);
     }
     private void CropSquare(object sender, RoutedEventArgs e) => _viewModel.ApplyAspectCrop(1);
     private void CropThreeTwo(object sender, RoutedEventArgs e) => _viewModel.ApplyAspectCrop(1.5);

@@ -63,8 +63,8 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
         MetadataView = CollectionViewSource.GetDefaultView(MetadataEntries);
         MetadataView.Filter = value => value is MetadataEntry entry &&
             ($"{entry.Group} {entry.Name} {entry.Value}").Contains(MetadataSearch, StringComparison.OrdinalIgnoreCase);
-        OpenCommand = new RelayCommand(OpenFiles);
-        OpenFolderCommand = new RelayCommand(OpenFolder);
+        OpenCommand = new AsyncCommand(OpenFilesAsync, ReportError);
+        OpenFolderCommand = new AsyncCommand(OpenFolderAsync, ReportError);
         ExportCommand = new AsyncCommand(ChooseExportAsync, ReportError, () => HasImage && !IsLoading && !IsExporting && (!HasLut || _lut is not null));
         SaveCommand = new AsyncCommand(SaveRecipeAsync, ReportError, () => HasImage && !IsLoading);
         ImportLutCommand = new AsyncCommand(ImportLutAsync, ReportError, () => HasImage);
@@ -78,7 +78,7 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
         CropCommand = new RelayCommand(() => { SelectedToolTab = SelectedToolTab == 1 ? 0 : 1; ShowBefore = false; }, () => HasImage && !IsLoading);
         ClearCropCommand = new RelayCommand(() => ChangeSettings(Settings with { Crop = null }, "crop"), () => HasImage);
         CompareCommand = new RelayCommand(() => ShowBefore = !ShowBefore, () => HasImage);
-        CancelCommand = new RelayCommand(() => { _loadCancellation?.Cancel(); _exportCancellation?.Cancel(); _detailCancellation?.Cancel(); Status = "已请求取消，正在结束当前步骤…"; }, () => IsLoading || IsExporting || IsDetailLoading);
+        CancelCommand = new RelayCommand(() => { CancelImport(); _loadCancellation?.Cancel(); _exportCancellation?.Cancel(); _detailCancellation?.Cancel(); Status = "已请求取消，正在结束当前步骤…"; }, () => IsImporting || IsLoading || IsExporting || IsDetailLoading);
         NaturalCommand = new RelayCommand(() => ApplyPreset(0), () => HasImage);
         FilmCommand = new RelayCommand(() => ApplyPreset(1), () => HasImage);
         MonoCommand = new RelayCommand(() => ApplyPreset(2), () => HasImage);
@@ -154,39 +154,20 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
     public double Straighten { get => Settings.Straighten; set => ChangeSettings(Settings with { Straighten = value }); }
     public double LutStrength { get => _recipe.LutStrength * 100; set => ChangeRecipe(_recipe with { LutStrength = value / 100 }, nameof(LutStrength)); }
 
-    public void AddFiles(IEnumerable<string> paths)
-    {
-        if (_disposed) return;
-        PhotoItem? first = null;
-        foreach (var path in paths)
-        {
-            if (!File.Exists(path) || !IsSupported(path)) continue;
-            var full = Path.GetFullPath(path);
-            var item = Photos.FirstOrDefault(photo => photo.Path.Equals(full, StringComparison.OrdinalIgnoreCase));
-            if (item is null) { item = new PhotoItem(full) { Rating = _ratings.GetRating(full) }; Photos.Add(item); }
-            first ??= item;
-        }
-        OnPropertyChanged(nameof(PhotoCount));
-        if (first is not null) SelectedPhoto = first;
-        else Error = "没有找到支持的文件。请打开 JPG、NEF 或 ORF。";
-    }
+    public void AddFiles(IEnumerable<string> paths) => AddFilesSynchronously(paths);
 
     public static bool IsSupported(string path) => Path.GetExtension(path).ToLowerInvariant() is ".jpg" or ".jpeg" or ".nef" or ".orf";
 
-    private void OpenFiles()
+    private async Task OpenFilesAsync()
     {
         var dialog = new OpenFileDialog { Title = "打开照片", Filter = "支持的照片|*.jpg;*.jpeg;*.nef;*.orf", Multiselect = true };
-        if (dialog.ShowDialog() == true) AddFiles(dialog.FileNames);
+        if (dialog.ShowDialog() == true) await AddFilesAsync(dialog.FileNames);
     }
 
-    private void OpenFolder()
+    private async Task OpenFolderAsync()
     {
         var dialog = new OpenFolderDialog { Title = "选择照片文件夹" };
-        if (dialog.ShowDialog() == true)
-        {
-            try { AddFiles(Directory.EnumerateFiles(dialog.FolderName).Where(IsSupported).OrderBy(Path.GetFileName)); }
-            catch (Exception ex) { ReportError(ex); }
-        }
+        if (dialog.ShowDialog() == true) await AddFilesAsync([dialog.FolderName]);
     }
 
     private async Task LoadPhotoAsync(PhotoItem item)
@@ -560,6 +541,7 @@ public sealed partial class EditorViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _disposed = true;
+        DisposeImport();
         _loadCancellation?.Cancel(); _renderCancellation?.Cancel(); _exportCancellation?.Cancel();
         _detailCancellation?.Cancel();
         _thumbnailCancellation.Cancel();

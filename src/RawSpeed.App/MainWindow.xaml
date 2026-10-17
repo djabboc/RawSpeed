@@ -25,6 +25,7 @@
                     <TextBlock Text="0.2" Foreground="{StaticResource Muted}" Margin="16,0" VerticalAlignment="Center" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ProgressBar Width="60" Height="3" IsIndeterminate="True" Visibility="{Binding IsImporting, Converter={StaticResource BoolVisibility}}" Margin="10,0" />
                     <Button Content="快捷键" Click="ConfigureShortcuts" />
                     <Button Content="打开照片" Command="{Binding OpenCommand}" AutomationProperties.AutomationId="OpenPhotos" />
                     <Button Content="保存配方" Command="{Binding SaveCommand}" />
@@ -242,7 +243,11 @@
                     <Button Content="取消" Command="{Binding CancelCommand}" Padding="8,2" FontSize="10" />
                     <TextBlock Text="{Binding ImageInfo}" Foreground="#7E8B99" FontSize="9" VerticalAlignment="Center" Margin="12,0,0,0" />
                 </StackPanel>
-                <TextBlock Text="{Binding Status}" Foreground="#A7B3C0" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Grid VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Status}" Foreground="#A7B3C0" FontSize="10" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Text="{Binding ImportStatus}" ToolTip="{Binding ImportStatus}" Foreground="#A7B3C0" FontSize="10" Margin="8,0,0,0" MaxWidth="210" TextTrimming="CharacterEllipsis" />
+                </Grid>
             </DockPanel>
         </Border>
     </Grid>

@@ -92,7 +92,7 @@ internal static class Program
 
             string fixture = Path.Combine(output, "ui-fixture.jpg");
             CreateFixture(fixture);
-            editor.AddFiles([fixture]);
+            await editor.AddFilesAsync([fixture]);
             await UntilAsync(() => !editor.IsLoading, "Loading generated JPEG");
             Check(editor.HasImage && editor.Preview is not null && !editor.HasError, "Real JPEG fixture decoded and rendered without a view-model error");
             BitmapSource? before = editor.Preview;
@@ -106,6 +106,9 @@ internal static class Program
             await UntilAsync(() => editor.Preview is not null && !ReferenceEquals(before, editor.Preview), "Applying image adjustments");
             await LayoutAsync(host, 1480, 960);
             Check(save.IsEnabled && export.IsEnabled && editor.UndoCommand.CanExecute(null), "Loaded-state save/export/undo command bindings are enabled");
+            Check(editor.ImportStatus.Contains("导入完成", StringComparison.Ordinal) &&
+                Descendants<TextBlock>(host).Any(text => text.Text == editor.ImportStatus && text.ActualWidth > 0),
+                "Async import completion is displayed in the real status bar");
 
             var photo = (PhotoViewport)window.FindName("Viewport");
             Check(photo.Source == editor.Preview && photo.ActualWidth > 100 && photo.ActualHeight > 100,
